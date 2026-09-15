@@ -29,6 +29,10 @@ git submodule update --init --recursive
 
 # 3) 一键回归（各仓库测试）
 ./scripts/verify.sh
+
+# 4) 一键联调（构建固件 + 全部联调测试：虚拟外设/解锁飞行/SIL/HIL/故障注入）
+./scripts/integrate.sh            # 全部
+./scripts/integrate.sh unlock     # 单步骤：firmware|sensors|unlock|sil|hil|fault
 ```
 
 ### 本地路径子模块说明
@@ -54,9 +58,13 @@ git -c protocol.file.allow=always submodule update --init --recursive
 子模块 commit 由壳工程锁定（`git submodule status` 查看）。推进子模块后
 （在子仓库内 commit），回到壳工程 `git add <submodule>` 即可记录新快照；
 他人 `git submodule update` 后得到**一致版本**。这保证"壳工程快照 = 可复现联调状态"。
+各子仓库已推 GitHub（fly-simulater/flyctrl/joc-base-dev 等本地领先提交已同步），
+壳工程快照可跨机器完整拉取。
 
 ## 文档导航
 
 - [`docs/architecture.md`](docs/architecture.md) — 整体架构（三层仿真栈 / 数据流 / 各层职责）
 - [`docs/engineering.md`](docs/engineering.md) — 各工程功能详解
 - [`docs/integration.md`](docs/integration.md) — 联调方式（虚拟外设 / SIL / HIL / 故障注入 / 解锁飞行）
+- [`scripts/integrate.sh`](scripts/integrate.sh) — 一键联调（构建固件 + 全部联调测试）
+- [`scripts/verify.sh`](scripts/verify.sh) — 一键回归（各仓库核心测试）
