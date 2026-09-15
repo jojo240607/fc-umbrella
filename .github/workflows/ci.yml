@@ -27,6 +27,7 @@ jobs:
           submodules: recursive
       - name: 安装 arm-none-eabi 工具链
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - uses: dtolnay/rust-toolchain@1.98.0
       - name: 一键快回归
         run: ./scripts/verify.sh
 
@@ -42,6 +43,7 @@ jobs:
           submodules: recursive
       - name: 安装工具链
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - uses: dtolnay/rust-toolchain@1.98.0
       - name: 安装 Rust no_std 目标
         run: rustup target add thumbv7em-none-eabihf
       - name: 一键联调 firmware（joc-base ELF + 三档 app.bin 落到规范布局）
