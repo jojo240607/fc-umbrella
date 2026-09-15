@@ -54,6 +54,16 @@ cargo test --release --test x_flyctrl_unlock_flight -- --nocapture
 要点：SBUS 通道编码 `raw = 992+(ch-1500)/500*819.5`，解锁阈值 ch>1700
 → 测试用 ch5=2000（raw=1811）。固件 SBUS 帧间锁存（armed 不随帧间隙归零）。
 
+## 2.5 双分区整机验收（系统 + 正式飞控 app）
+
+验证系统 ELF + flyctrl app（**默认 feature 正式飞控**，`$ROOT/flyctrl/app.bin`）
+双镜像加载、App 分区自举挂载、业务任务拉起并跑出周期心跳。
+
+```bash
+cd mcu_simulater
+cargo test --release --test x_flyctrl_app   # 里程碑：READY / RUST app mounted / task started / hb seq=
+```
+
 ## 3. SIL（纯算法回归，无 MCU）
 
 ```bash
@@ -65,12 +75,29 @@ cargo test --test sensor_fault              # 故障注入 6 项
 
 ## 4. HIL 双机闭环（MCU 控制 + PC 物理）
 
-固件 hil feature + USB CDC 链路：PC 注入 HIL_SENSOR/设定点，MCU 回传执行器。
+固件 hil feature + USB CDC 链路：
 
 ```bash
 cd mcu_simulater
-cargo test --release --test x_hil_mcusim    # ~53s，roll/pitch/位置不发散
+cargo test --release --test x_hil_mcusim      # USB CDC 链路 ~53s，roll/pitch/位置不发散
+# 需 JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin（integrate.sh do_hil 已导出）
 ```
+
+> ⚠️ **已知失败项：`x_shmem_mcusim`**（SRAM3 共享内存直通闭环）。当前固件
+> 组合下 app 只初始化 3 个互斥量即停滞（`ctrl: imu_ok=false`，共享内存 IMU
+> 注入未生效），改动路径工程化之前即已失败（多产物组合对照确认非回归）。
+> 待固件 hil_shmem 契约对齐后修复，暂不纳入 `integrate.sh` 一键联调。
+
+## 4.5 悬停闭环（可选，慢）
+
+虚拟外设直通闭环长仿真（60s 悬停演示），需 real-sensors 产物 `/tmp/flyctrl_real.bin`：
+
+```bash
+cd mcu_simulater
+cargo test --release --test x_vperiph_mcusim   # 直通闭环（含长悬停）
+cargo test --release --test x_hover_demo       # 60s 持续悬停（慢）
+```
+
 
 ## 5. 故障注入与调试平台
 

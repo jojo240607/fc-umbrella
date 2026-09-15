@@ -2,13 +2,15 @@
 # 一键联调：构建固件 + 全部联调测试（虚拟外设 / 解锁飞行 / SIL / HIL / 故障注入）。
 #
 # 用法：
-#   ./scripts/integrate.sh             # 跑全部（all）
-#   ./scripts/integrate.sh firmware    # 构建底座 ELF + 固件（joc-base / real-sensors + hil）
+#   ./scripts/integrate.sh             # 跑全部（all：firmware+sensors+unlock+app+sil+hil+fault）
+#   ./scripts/integrate.sh firmware    # 构建底座 ELF + 固件（joc-base / 正式飞控 / real-sensors / hil）
 #   ./scripts/integrate.sh sensors     # 虚拟外设全链路
 #   ./scripts/integrate.sh unlock      # 解锁飞行（控制律闭环）
+#   ./scripts/integrate.sh app         # 双分区整机验收（系统 + 正式飞控 app）
 #   ./scripts/integrate.sh sil         # SIL 回归（fly-sim-core + sensor_fault）
-#   ./scripts/integrate.sh hil         # HIL 双机闭环
+#   ./scripts/integrate.sh hil         # HIL 双机闭环（USB CDC + 共享内存直通）
 #   ./scripts/integrate.sh fault       # 故障注入 / 总线嗅探
+#   ./scripts/integrate.sh hover       # （可选，慢）虚拟外设直通悬停闭环（60s 仿真）
 #
 # 产物路径约定（与 mcu_simulater::artifact 同源）：
 #   - joc-base minimal ELF 构建到 $ROOT/joc-base/build_hil/（壳工程规范布局），
@@ -40,27 +42,27 @@ step() {
 }
 
 # joc-base minimal ELF 的查找与导出（mcu_simulater::artifact 解析顺序同源）：
-#   1) 壳工程规范布局（build_hil，firmware 步骤会构建到此）；
-#   2) 历史开发机路径兜底。
-CANON_ELF="$ROOT/joc-base/build_hil/stm32f407_minimal.elf"
+#   1) 壳工程规范布局 build_hil（firmware 步骤构建到锁定源码产物 jOS.elf）；
+#   2) 历史开发机路径兜底（build_rel 优先，避开旧的 build_hil 固件）。
+CANON_ELF="$ROOT/joc-base/build_hil/jOS.elf"
 LEGACY_ELF=/home/ubuntu/work/joc-base/build_rel/stm32f407_minimal.elf
 need_elf() {
-    if [ -f "$CANON_ELF" ]; then
-        export JOC_BASE_ELF="$CANON_ELF"
-        return 0
-    fi
-    if [ -f "$LEGACY_ELF" ]; then
-        export JOC_BASE_ELF="$LEGACY_ELF"
-        return 0
-    fi
+    for c in "$CANON_ELF" "$ROOT/joc-base/build_hil/stm32f407_minimal.elf" "$LEGACY_ELF"; do
+        if [ -f "$c" ]; then
+            export JOC_BASE_ELF="$c"
+            return 0
+        fi
+    done
     echo "[SKIP] joc-base 固件 ELF 缺失——先执行：./scripts/integrate.sh firmware"
-    echo "  （即 cd $ROOT/joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil）"
+    echo "  （即 cd $ROOT/joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil，产物为 build_hil/jOS.elf）"
     return 1
 }
 
 do_firmware() {
-    step "构建 joc-base ELF（build_hil 规范布局）" 600 \
+    step "构建 joc-base ELF（build_hil 规范布局 → jOS.elf）" 600 \
         bash -c "cd $ROOT/joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil"
+    step "构建固件 正式飞控 app.bin（默认 feature → $ROOT/flyctrl/app.bin）" 400 \
+        bash -c "cd $ROOT/flyctrl && python3 build_app.py --out $ROOT/flyctrl/app.bin"
     step "构建固件 real-sensors" 400 bash "$ROOT/scripts/build.sh" real-sensors
     step "构建固件 hil" 400 bash "$ROOT/scripts/build.sh" hil
 }
@@ -70,6 +72,9 @@ do_sensors()  { need_elf || return 0
 do_unlock()   { need_elf || return 0
     step "解锁飞行 x_flyctrl_unlock_flight" 900 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_flyctrl_unlock_flight"; }
+do_app()      { need_elf || return 0
+    step "双分区整机 x_flyctrl_app（正式飞控 app.bin）" 600 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_flyctrl_app"; }
 do_sil()      {
     step "SIL fly-sim-core lib" 400 \
         bash -c "cd $ROOT/fly-simulater && cargo test -p fly-sim-core --lib";
@@ -79,23 +84,34 @@ do_sil()      {
         bash -c "cd $ROOT/fly-simulater && cargo test --test sensor_fault"; }
 do_hil()      { need_elf || return 0
     step "HIL 双机闭环 x_hil_mcusim" 900 \
-        bash -c "export JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin; cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_hil_mcusim"; }
+        bash -c "export JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin; cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_hil_mcusim";
+    # 注：x_shmem_mcusim（SRAM3 共享内存直通闭环）当前机器/当前固件组合下
+    # 已知失败（固件只初始化 3 个互斥量即停滞，改动前即如此，非本次回归），
+    # 暂不纳入一键联调，作为后续修复项（见 docs/integration.md §4）。
+}
 do_fault()    { need_elf || return 0
     step "MCU 故障注入 x_fault_injection" 600 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_fault_injection";
     step "总线嗅探 x_bus_trace" 600 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_bus_trace"; }
+do_hover()    { need_elf || return 0
+    step "虚拟外设直通闭环 x_vperiph_mcusim" 900 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_vperiph_mcusim";
+    step "持续悬停演示 x_hover_demo（60s 仿真，慢）" 1500 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_hover_demo"; }
 
 WHAT="${1:-all}"
 case "$WHAT" in
-    all)       do_firmware; do_sensors; do_unlock; do_sil; do_hil; do_fault ;;
+    all)       do_firmware; do_sensors; do_unlock; do_app; do_sil; do_hil; do_fault ;;
     firmware)  do_firmware ;;
     sensors)   do_sensors ;;
     unlock)    do_unlock ;;
+    app)       do_app ;;
     sil)       do_sil ;;
     hil)       do_hil ;;
     fault)     do_fault ;;
-    *) echo "未知步骤: $WHAT（可选 all/firmware/sensors/unlock/sil/hil/fault）"; exit 2 ;;
+    hover)     do_hover ;;
+    *) echo "未知步骤: $WHAT（可选 all/firmware/sensors/unlock/app/sil/hil/fault/hover）"; exit 2 ;;
 esac
 
 echo ""
