@@ -1,0 +1,50 @@
+name: umbrella-ci
+
+# 壳工程一键回归/联调验证（跨机器可复现的 CI 事实）：
+# - quick：verify.sh 快回归（flyctrl core + fly-sim-core + sensor_fault + mcu_simulater lib）
+# - integration：integrate.sh firmware 在锁定源码上构建规范布局产物，并跑双分区整机验收
+#   （x_flyctrl_app：canonical jOS.elf + 正式飞控 app.bin 端到端）
+#
+# 子模块以 SSH URL 登记，CI 里用 insteadOf 重写为 HTTPS（仓库均 public 免认证）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  quick:
+    name: 快回归（verify.sh）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 子模块 SSH→HTTPS 重写
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: 安装 arm-none-eabi 工具链
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: 一键快回归
+        run: ./scripts/verify.sh
+
+  integration:
+    name: 联调产物构建 + 双分区验收
+    needs: quick
+    runs-on: ubuntu-latest
+    steps:
+      - name: 子模块 SSH→HTTPS 重写
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: 安装工具链
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: 安装 Rust no_std 目标
+        run: rustup target add thumbv7em-none-eabihf
+      - name: 一键联调 firmware（joc-base ELF + 三档 app.bin 落到规范布局）
+        run: ./scripts/integrate.sh firmware
+      - name: 双分区整机验收 x_flyctrl_app
+        run: cd mcu_simulater && cargo test --release --test x_flyctrl_app
