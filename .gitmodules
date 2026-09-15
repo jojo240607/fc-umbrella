@@ -22,7 +22,7 @@
 	url = git@github.com:jojo240607/groundctrl.git
 [submodule "joc-rtos-app-sdk"]
 	path = joc-rtos-app-sdk
-	url = /home/ubuntu/work/joc-rtos-app-sdk
+	url = git@github.com:jojo240607/joc-rtos-app-sdk.git
 [submodule "joc-drvtest-app"]
 	path = joc-drvtest-app
-	url = /home/ubuntu/work/joc-drvtest-app
+	url = git@github.com:jojo240607/joc-drvtest-app.git
