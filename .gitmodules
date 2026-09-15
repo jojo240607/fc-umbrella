@@ -1,0 +1,27 @@
+[submodule "fly-simulater"]
+	path = fly-simulater
+	url = git@github.com:jojo240607/fly-simulater.git
+[submodule "mavlink-core"]
+	path = mavlink-core
+	url = git@github.com:jojo240607/mavlink-core.git
+[submodule "physics"]
+	path = physics
+	url = git@github.com:jojo240607/physics.git
+[submodule "flyctrl"]
+	path = flyctrl
+	url = git@github.com:jojo240607/flyctrl.git
+[submodule "mcu_simulater"]
+	path = mcu_simulater
+	url = git@github.com:jojo240607/mcu_simulater.git
+[submodule "joc-base"]
+	path = joc-base
+	url = git@github.com:jojo240607/joc-base.git
+[submodule "groundctrl"]
+	path = groundctrl
+	url = git@github.com:jojo240607/groundctrl.git
+[submodule "joc-rtos-app-sdk"]
+	path = joc-rtos-app-sdk
+	url = /home/ubuntu/work/joc-rtos-app-sdk
+[submodule "joc-drvtest-app"]
+	path = joc-drvtest-app
+	url = /home/ubuntu/work/joc-drvtest-app
