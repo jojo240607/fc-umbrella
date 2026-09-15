@@ -10,7 +10,7 @@
 | `flyctrl/` | jojo240607/flyctrl | 飞控固件（Rust no_std：EKF / PID / 飞行模式 / FDIR / MAVLink 上行） |
 | `fly-simulater/` | jojo240607/fly-simulater | 物理仿真平台（fly-sim-core：plant / controller / sensor / wind / SIL） |
 | `mcu_simulater/` | jojo240607/mcu_simulater | MCU 指令级仿真器（Unicorn STM32F407 + 虚拟外设 I2C/UART/USB） |
-| `joc-base/` | jojo240607/joc-base | RTOS 内核 + 板级（STM32F407 minimal，固件 ELF 底座） |
+| `joc-base/` | jojo240607/joc-base（**dev 分支**） | RTOS 内核 + 板级（STM32F407 minimal，固件 ELF 底座） |
 | `joc-rtos-app-sdk/` | （本地，未推 GitHub） | 应用 SDK（Rust no_std：日志 / 设备 / 任务，180B 日志缓冲） |
 | `mavlink-core/` | jojo240607/mavlink-core | MAVLink 编解码（帧 / 枚举 / COMMAND_LONG） |
 | `physics/` | jojo240607/physics | 物理引擎 phy-sdk（fly-sim-core 可选依赖，SIL 真实物理） |

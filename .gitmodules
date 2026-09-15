@@ -16,6 +16,7 @@
 [submodule "joc-base"]
 	path = joc-base
 	url = git@github.com:jojo240607/joc-base.git
+	branch = dev
 [submodule "groundctrl"]
 	path = groundctrl
 	url = git@github.com:jojo240607/groundctrl.git
