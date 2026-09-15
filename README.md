@@ -45,6 +45,22 @@ git submodule update --init --recursive
 git -c protocol.file.allow=always submodule update --init --recursive
 ```
 
+### 联调产物路径约定（跨机器可复现的关键）
+
+联调测试（mcu_simulater `tests/x_*.rs`、fly-sim-server）不再硬编码机器路径，
+统一经 `mcu_simulater::artifact` 解析，优先级：
+
+1. **环境变量**：`JOC_BASE_ELF`（joc-base minimal ELF）、`JOC_APP_FLYCTRL` /
+   `JOC_APP_DRVTEST` / `JOC_APP_SDK`（各 app.bin）——`./scripts/integrate.sh`
+   一键联调即构建产物并导出；
+2. **壳工程规范布局**：`joc-base/build_hil/stm32f407_minimal.elf`、
+   `flyctrl/app.bin` 等（本仓库上一级目录即壳工程根）；
+3. **历史开发机路径** `/home/ubuntu/work/...`（仅当存在时兜底）。
+
+新机器流程：`git submodule update --init --recursive` →
+`./scripts/integrate.sh firmware`（构建底座 ELF + 两种固件）→
+`./scripts/integrate.sh all`。
+
 ## 版本快照
 
 子模块 commit 由壳工程锁定（`git submodule status` 查看）。推进子模块后

@@ -3,12 +3,18 @@
 #
 # 用法：
 #   ./scripts/integrate.sh             # 跑全部（all）
-#   ./scripts/integrate.sh firmware    # 仅构建固件（real-sensors + hil）
+#   ./scripts/integrate.sh firmware    # 构建底座 ELF + 固件（joc-base / real-sensors + hil）
 #   ./scripts/integrate.sh sensors     # 虚拟外设全链路
 #   ./scripts/integrate.sh unlock      # 解锁飞行（控制律闭环）
 #   ./scripts/integrate.sh sil         # SIL 回归（fly-sim-core + sensor_fault）
 #   ./scripts/integrate.sh hil         # HIL 双机闭环
 #   ./scripts/integrate.sh fault       # 故障注入 / 总线嗅探
+#
+# 产物路径约定（与 mcu_simulater::artifact 同源）：
+#   - joc-base minimal ELF 构建到 $ROOT/joc-base/build_hil/（壳工程规范布局），
+#     并导出 JOC_BASE_ELF 供测试使用；历史开发机路径仅作兜底。
+#   - flyctrl 固件输出 /tmp/flyctrl_real.bin（real-sensors）与
+#     /tmp/flyctrl_hil.bin（hil）；HIL 测试经 JOC_APP_FLYCTRL 指向 hil 产物。
 #
 # 机器慢（内存压力/swap）时默认 --release 跑 MCU 仿真测试（~60-100s/测试）。
 set -uo pipefail
@@ -33,21 +39,28 @@ step() {
     rm -f /tmp/fc_intg_$$.log
 }
 
-# 测试硬编码的 ELF 路径（mcu_simulater tests/x_*.rs）：原工作区 joc-base 构建产物。
+# joc-base minimal ELF 的查找与导出（mcu_simulater::artifact 解析顺序同源）：
+#   1) 壳工程规范布局（build_hil，firmware 步骤会构建到此）；
+#   2) 历史开发机路径兜底。
+CANON_ELF="$ROOT/joc-base/build_hil/stm32f407_minimal.elf"
 LEGACY_ELF=/home/ubuntu/work/joc-base/build_rel/stm32f407_minimal.elf
 need_elf() {
-    # 1) 原工作区已有构建产物（当前开发机）
-    [ -f "$LEGACY_ELF" ] && return 0
-    # 2) 壳工程 joc-base 子模块构建产物
-    [ -f "$ROOT/joc-base/build_hil/stm32f407_minimal.elf" ] && return 0
-    [ -f "$ROOT/joc-base/build_rel/stm32f407_minimal.elf" ] && return 0
-    echo "[SKIP] joc-base 固件 ELF 缺失——先构建底座："
-    echo "  cd $ROOT/joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil"
-    echo "  （注：mcu_simulater 测试当前硬编码 $LEGACY_ELF；新机器请在 joc-base 子模块内构建后同步路径）"
+    if [ -f "$CANON_ELF" ]; then
+        export JOC_BASE_ELF="$CANON_ELF"
+        return 0
+    fi
+    if [ -f "$LEGACY_ELF" ]; then
+        export JOC_BASE_ELF="$LEGACY_ELF"
+        return 0
+    fi
+    echo "[SKIP] joc-base 固件 ELF 缺失——先执行：./scripts/integrate.sh firmware"
+    echo "  （即 cd $ROOT/joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil）"
     return 1
 }
 
 do_firmware() {
+    step "构建 joc-base ELF（build_hil 规范布局）" 600 \
+        bash -c "cd $ROOT/joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil"
     step "构建固件 real-sensors" 400 bash "$ROOT/scripts/build.sh" real-sensors
     step "构建固件 hil" 400 bash "$ROOT/scripts/build.sh" hil
 }
@@ -57,7 +70,7 @@ do_sensors()  { need_elf || return 0
 do_unlock()   { need_elf || return 0
     step "解锁飞行 x_flyctrl_unlock_flight" 900 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_flyctrl_unlock_flight"; }
-do_sil()      { need_elf || return 0
+do_sil()      {
     step "SIL fly-sim-core lib" 400 \
         bash -c "cd $ROOT/fly-simulater && cargo test -p fly-sim-core --lib";
     step "SIL 磁锚定闭环 mag_hover" 300 \
@@ -66,7 +79,7 @@ do_sil()      { need_elf || return 0
         bash -c "cd $ROOT/fly-simulater && cargo test --test sensor_fault"; }
 do_hil()      { need_elf || return 0
     step "HIL 双机闭环 x_hil_mcusim" 900 \
-        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_hil_mcusim"; }
+        bash -c "export JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin; cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_hil_mcusim"; }
 do_fault()    { need_elf || return 0
     step "MCU 故障注入 x_fault_injection" 600 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_fault_injection";

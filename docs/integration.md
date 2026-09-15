@@ -8,14 +8,27 @@
 
 ## 0. 前置：构建固件与底座
 
+产物路径**不硬编码**：mcu_simulater 测试经 `mcu_simulater::artifact` 解析
+（环境变量 `JOC_BASE_ELF` / `JOC_APP_FLYCTRL` / `JOC_APP_DRVTEST` / `JOC_APP_SDK`
+→ 壳工程规范布局 → 历史开发机路径兜底）。一键联调 `./scripts/integrate.sh firmware`
+即完成以下构建并导出变量：
+
 ```bash
-# RTOS 底座 ELF（joc-base 内，一次性）
+# RTOS 底座 ELF（joc-base 内，一次性；产物落壳工程规范布局 build_hil/）
 cd joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil
 
 # 固件（flyctrl 内；两种 feature 产物）
 cd flyctrl
 python3 build_app.py --features real-sensors --out /tmp/flyctrl_real.bin
 python3 build_app.py --features hil            --out /tmp/flyctrl_hil.bin
+```
+
+单独跑某个测试时若产物不在规范布局（如独立仓库 clone），用环境变量覆盖：
+
+```bash
+export JOC_BASE_ELF=/path/to/stm32f407_minimal.elf
+export JOC_APP_FLYCTRL=/path/to/flyctrl/app.bin
+cd mcu_simulater && cargo test --release --test x_hil_mcusim
 ```
 
 ## 1. 虚拟外设全链路（真实驱动 × 虚拟总线）
@@ -86,4 +99,5 @@ cargo test --test sensor_fault                  # GPS 偏置/卡死、IMU 冻结
 | 解锁后电机仍零 | SBUS 帧间锁存缺失（旧固件）；确认 ch5>1700（raw 编码） |
 | EKF 高度收敛到 ~0 | 虚拟 baro 海平面 vs GPS 高度不一致：`attach_default_sensors_with_baro_height(4.0)` 对齐 |
 | EKF 磁锚定发散 | 非零场磁力计须与 EKF 初值自洽（绕 Z 纯 yaw 修正 + 门控） |
+| 测试报产物缺失（ELF / app.bin） | 产物路径经 `mcu_simulater::artifact` 解析：先跑 `./scripts/integrate.sh firmware` 构建到规范布局，或用 `JOC_BASE_ELF` / `JOC_APP_*` 环境变量指向已有产物 |
 | debug 测试极慢 | 机器内存压力/swap：用 `--release` |
