@@ -197,8 +197,13 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
   → 控制率仅 ~108Hz → 闭环发散；改 688K 字节（=4ms@172M）使 control 拍与
   物理 1:1 对齐 → **x_hover_demo 全绿**（末态姿态 0.0°、max|roll|=0.01°）。
   **x_hover_noise 残余**（realistic IMU 噪声）：max|roll| 43°→30° 仍超断言
-  15°——EKF 垂向速度纯积分漂移（vz=-2.6 恒定、baro 不锚定速度）→ PID 高度
-  阻尼误判 → 姿态耦合，待专项（EKF 垂向速度/零偏观测）。
+  15°。**2026-09 诊断**（6 组二分实验：accel_bias/gyro_bias/att_kd/vib_amp/
+  att_kp 单独归零或增强均无效）确认是 **SIL 闭环（ToyWorld 简化物理 + 固件
+  PID att_kp=3.0）在任意 IMU 白噪声下的姿态极限环**（roll/pitch ±30°，EKF
+  估计本身稳定 ±2°、与物理脱节，GPS/高度控制耦合）——非垂向漂移、非单一
+  根因。ToyWorld 无螺旋桨/机体空气阻尼，固件 PID 增益在其上噪声裕度不足；
+  真机需控制环噪声鲁棒性调优（输入滤波/增益裕度），SIL 物理模型增强为下轮
+  候选。
 - **`x_fault_injection::midrun_nack_isolates_slave`（bmp280 读计数冻结）**：
   mpu6050 NACK 注入后固件 bmp280(0x76) I2C 读停（30M/pristine 固件均复现，
   模拟器 START 清错误位无效）。疑似 RTOS I2C 驱动（rtos_app_sdk）NACK 后错误
