@@ -150,14 +150,18 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
 - **高度基准**：场景 GPS 高度 `alt_ref = 4.0`（固件拒绝 `alt<=0` 的 NED 原点锁）；
   固件 GPS 首次 fix 时锁定 `baro_ref`，此后 EKF 用 `alt - baro_ref`（避免
   baro 海平面 0m 与 GPS 4m 的基线差被当真实高度差）。
-- **步进**：`STEP_INSNS = 400_000`（≈13.3ms 虚拟/步，每步一帧场景真值）；
-  `SENSOR_SEQ` 冻结判据用"连续 >20 步未推进"窗口（悬停冻结时 IMU 读数
-  norm≈9.81 不误报）。
-- **固件时间比场景慢约 5–8 倍（虚拟时钟保真度，非固件 bug）**：EKF 每拍
-  ~1M retired 指令超出 4ms 预算（120K）→ 控制实际 ~30Hz，`dt=0.004` 与周期
-  失配 → 动态量（速度/高度/yaw）按场景时间刻度滞后。**因此所有动态断言都是
-  稳态收敛 / 单调 / 量级，不做场景时间相位对齐**（如 climb 只断高度单调减、
-  cruise 只断速度有界、turn 只断 yaw 单调）。
+- **步进**：`STEP_INSNS = 2_300_000`（≈13.3ms 场景/步 = 固件时间，见下方
+  时钟校准）；`SENSOR_SEQ` 冻结判据用"连续 >20 步未推进"窗口（悬停冻结时
+  IMU 读数 norm≈9.81 不误报）。
+- **虚拟时钟保真度（2026-09 校准）**：`retired_count()` 实为 TB 字节数
+  （block hook `fetch_add(size)`，Thumb ≈2×指令数）。旧 `VIRTUAL_INSNS_PER_SEC
+  =30e6` 是"指令数"口径残留 → 场景/推流时间比 CPU 侧虚拟时钟（SysTick）
+  慢 5.7 倍（实测校准：sensor msleep(2ms) ↔ 344K 字节/拍 → **172M 字节/虚拟秒**
+  ≈86M 指令/秒，与真实 MCU ~100-150MIPS 同量级）。校准后**场景时间 = 固件
+  时间**：控制拍速 46.7→178Hz（场景口径），yaw 速率与场景真值匹配（±15%），
+  动态断言可按场景时间做相位对齐（turn 断 yaw 累计旋转 ≈ ω×t）。剩余 ~1.4 倍
+  错配为**固件固有**（EKF 每拍执行超 4ms 预算，真实 MCU 同量级），非模拟器
+  时钟失真。校准副作用与修复见下方"本轮修复"表（GPS 观测链路、FDIR 误判）。
 - **EstState 内存布局（实测）**：`VehicleState(72B) + health(1B@72) +
   armed(1B@73)`——repr(C) enum 未标判别值时 ARM 编译为 1B（非 C int 4B），
   `read_est` 按实测偏移读取（hb 行 armed=true 时 EST+73=1、EST+76=0 实证）。
@@ -171,6 +175,10 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
 | **GPS RMC 状态随 fix** | `mcu_simulater/.../nmea_gps.rs` | RMC status 硬编码 'A' → GpsDrop 后 gps 恒有效、FDIR 不降级 → status 随 fix（'A'/'V'） |
 | **RC 掉链优先于卡滞** | `mcu_simulater/.../scenario.rs` | RcDrop（全通道 1500）被 RcStuck（ch4=2000）覆盖 → 掉链后解锁位不恢复 → 失联窗口内 RcStuck 不生效 |
 | **EstState 布局读取** | `mcu_simulater/tests/common/mod.rs` | read_est 读 health@72(4B)/armed@76 得到 0/256 假象 → 按实测 1B 布局读 health@72、armed@73 |
+| **虚拟时钟校准** | `mcu_simulater/src/sim/timing.rs` | `VIRTUAL_INSNS_PER_SEC` 30M(指令口径) → 172M(字节口径，SysTick 实测折算)，`EnvHarness::STEP_DT` 跟随全局 → 场景时间=固件时间（原慢 5.7 倍），yaw 速率匹配真值 |
+| **UART 推流粒度** | `mcu_simulater/tests/common/mod.rs` | 校准后每 run 推流 33B < GPS 帧 131B → 帧碎、NMEA 解析抖动、GPS 观测稀疏 → `STEP_INSNS` 400K→2.3M（13.3ms/步，191B/run 帧完整） |
+| **GPS 解析跨批卡死** | `flyctrl/app/src/sensors/gps/ublox.rs` | drain 缓冲 128B < 帧批 130B(GGA+RMC) → 跨批错位 NmeaLine 卡死、GPS 间歇失效 → 256B 一次收整帧 |
+| **GPS 样本保持** | `flyctrl/app/src/flyctrl/sensors_task.rs` | 无新帧每拍清 f.gps → control 4ms 拍错过 2ms Some 窗口、pos_available 大面积 false → FDIR 误判 GPS lost(health=1) → 保持样本 500ms（超时才清） |
 
 ### 已知设计局限（文档记录，非本轮引入）
 
@@ -180,6 +188,17 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
   roll 精确值。
 - GPS Doppler（r_vel=0.3）长时间约束下 EKF 水平速度有界但偏高（固件时间慢 8 倍
   放大位置观测交叉协方差），longrun 断言"有界"而非精确收敛。
+
+### 已知基线问题（回归时确认，非本轮引入）
+
+- **`x_hover_demo` / `x_hover_noise`（SIL 闭环）roll 漂移 ~40°**：SimLoop 物理
+  注入真值 IMU 下 EKF roll 在 35s 闭环中发散（30M/172M 虚拟时钟均复现，30M
+  下 roll 40.6°）。与 EnvHarness 虚拟外设链路（x_env_* 全绿）不同路，疑似 SIL
+  物理帧率与固件采样/锚定时序失配，待专项排查。
+- **`x_fault_injection::midrun_nack_isolates_slave`（bmp280 读计数冻结）**：
+  mpu6050 NACK 注入后固件 bmp280(0x76) I2C 读停（30M/pristine 固件均复现，
+  模拟器 START 清错误位无效）。疑似 RTOS I2C 驱动（rtos_app_sdk）NACK 后错误
+  恢复缺失，待专项排查。
 
 ## 6. 模式与航向（新增能力）
 
