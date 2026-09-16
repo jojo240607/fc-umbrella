@@ -127,6 +127,60 @@ cd fly-simulater
 cargo test --test sensor_fault                  # GPS 偏置/卡死、IMU 冻结 → FDIR
 ```
 
+## 5.5 虚拟设备直接模拟：环境场景测试（EnvScenario）
+
+面向**飞控软件稳定性**的环境压力测试：不经 SIL/HIL 物理闭环，直接在
+MCU 指令级仿真上让 **real-sensors 固件真实二进制**读取**虚拟外设**
+（I2C mpu6050/bmp280/qmc5883→i2c1；UART GPS NMEA→uart1、SBUS→uart2），
+传感器数据来自 **EnvScenario 运动学真值 + 扰动 + 故障** 逐拍写入的
+`FlySimState`。测试断言走共享内存（EST_STATE / SENSOR_SEQ），不依赖日志。
+
+```bash
+cd mcu_simulater
+cargo test --release --test x_env_smoke          # 布局探针 + 悬停基线（2）
+cargo test --release --test x_env_motion         # 爬升/巡航/姿态摆动/协调转弯（4）
+cargo test --release --test x_env_faults         # IMU冻结/饱和、GPS掉链、baro阶跃/跳变/冻结（6）
+cargo test --release --test x_env_noise_perturb  # 传感器噪声/偏置/漂移鲁棒性（5）
+cargo test --release --test x_env_longrun        # 长时悬停/巡航有界性（2）
+cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2）
+```
+
+### 环境约定（重要）
+
+- **高度基准**：场景 GPS 高度 `alt_ref = 4.0`（固件拒绝 `alt<=0` 的 NED 原点锁）；
+  固件 GPS 首次 fix 时锁定 `baro_ref`，此后 EKF 用 `alt - baro_ref`（避免
+  baro 海平面 0m 与 GPS 4m 的基线差被当真实高度差）。
+- **步进**：`STEP_INSNS = 400_000`（≈13.3ms 虚拟/步，每步一帧场景真值）；
+  `SENSOR_SEQ` 冻结判据用"连续 >20 步未推进"窗口（悬停冻结时 IMU 读数
+  norm≈9.81 不误报）。
+- **固件时间比场景慢约 5–8 倍（虚拟时钟保真度，非固件 bug）**：EKF 每拍
+  ~1M retired 指令超出 4ms 预算（120K）→ 控制实际 ~30Hz，`dt=0.004` 与周期
+  失配 → 动态量（速度/高度/yaw）按场景时间刻度滞后。**因此所有动态断言都是
+  稳态收敛 / 单调 / 量级，不做场景时间相位对齐**（如 climb 只断高度单调减、
+  cruise 只断速度有界、turn 只断 yaw 单调）。
+- **EstState 内存布局（实测）**：`VehicleState(72B) + health(1B@72) +
+  armed(1B@73)`——repr(C) enum 未标判别值时 ARM 编译为 1B（非 C int 4B），
+  `read_est` 按实测偏移读取（hb 行 armed=true 时 EST+73=1、EST+76=0 实证）。
+
+### 本轮修复（虚拟直接模拟暴露并验证）
+
+| 修复 | 文件 | 现象 → 修法 |
+|---|---|---|
+| **EKF 机动锚定门控** | `flyctrl/core/src/estimator/ekf.rs` | 协调转弯稳态 roll 2.2° vs 真值 27°：比力幅值/方向门控无法区分"水平加速 vs 重力"，机动时锚定把 roll 拉向 0 → **gyro 幅值门控**（\|ω\|<0.25→1.0，<0.6 线性衰减，否则 0，乘进锚定增益） |
+| **磁力计模型（模拟器）** | `mcu_simulater/.../data_source.rs` | StaticMag 固定机体系磁场是错误模型（yaw 观测恒定 → 锚定拉回）→ **世界系恒定地磁场 [0.2,0,0.4] 经姿态旋转到机体**（`rotate_by_quat_conj`） |
+| **GPS RMC 状态随 fix** | `mcu_simulater/.../nmea_gps.rs` | RMC status 硬编码 'A' → GpsDrop 后 gps 恒有效、FDIR 不降级 → status 随 fix（'A'/'V'） |
+| **RC 掉链优先于卡滞** | `mcu_simulater/.../scenario.rs` | RcDrop（全通道 1500）被 RcStuck（ch4=2000）覆盖 → 掉链后解锁位不恢复 → 失联窗口内 RcStuck 不生效 |
+| **EstState 布局读取** | `mcu_simulater/tests/common/mod.rs` | read_est 读 health@72(4B)/armed@76 得到 0/256 假象 → 按实测 1B 布局读 health@72、armed@73 |
+
+### 已知设计局限（文档记录，非本轮引入）
+
+- EKF 垂向速度**位置观测增益 k[5] 刻意清零**（恢复实验使 climb 恶化 2.12→3.06），
+  垂向速度纯 IMU 积分；x[9] 垂向加计零偏仅由速度观测驱动。
+- 协调转弯场景从 t=0 即恒定 bank（无建立过程）→ 陀螺无法建立 roll，测试不断言
+  roll 精确值。
+- GPS Doppler（r_vel=0.3）长时间约束下 EKF 水平速度有界但偏高（固件时间慢 8 倍
+  放大位置观测交叉协方差），longrun 断言"有界"而非精确收敛。
+
 ## 6. 模式与航向（新增能力）
 
 - **磁航向锚定**：EKF `set_mag_declination(decl)`（flyctrl core 单测：
