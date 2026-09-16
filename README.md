@@ -30,9 +30,9 @@ git submodule update --init --recursive
 # 3) 一键回归（各仓库测试）
 ./scripts/verify.sh
 
-# 4) 一键联调（构建固件 + 全部联调测试：虚拟外设/解锁飞行/SIL/HIL/故障注入）
+# 4) 一键联调（构建固件 + 全部联调测试：虚拟外设/解锁飞行/SIL/HIL/共享内存/故障注入）
 ./scripts/integrate.sh            # 全部
-./scripts/integrate.sh unlock     # 单步骤：firmware|sensors|unlock|sil|hil|fault
+./scripts/integrate.sh unlock     # 单步骤：firmware|sensors|unlock|app|sil|hil|shmem|fault|hover
 ```
 
 ### 子模块 URL

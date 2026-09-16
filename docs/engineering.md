@@ -6,7 +6,9 @@ Rust `no_std` 飞控，编译为真实 STM32F407 二进制，经 mcu_simulater �
 
 **Features（build_app.py --features）**：
 - `real-sensors`：真实驱动（MPU6050/BMP280/QMC5883/U-blox/SBUS）经 I2C/UART 总线读写
-- `hil`：HIL 双机闭环（USB 链路，设定点来自 PC 仿真器）
+- `hil`：HIL 双机闭环——USB CDC（MAVLink HIL_SENSOR/SET_POSITION 上下行）+
+  SRAM3 共享内存直连（`app/src/flyctrl/hil_shmem.rs`，无 USB/MAVLink 零协议通道），
+  设定点来自 PC 仿真器
 - `demo` / `usbtest` / `integration-test`：演示/调试
 
 **核心**：
@@ -18,7 +20,8 @@ Rust `no_std` 飞控，编译为真实 STM32F407 二进制，经 mcu_simulater �
 - `core/src/flightmode.rs` + `mission.rs`：飞行模式治理（ModeGovernor）与航点任务
 - `app/src/flyctrl/`：4 任务（control 4ms / sensors / telemetry / uplink），
   共享 `step_hil` 编排；非 HIL 模式按 `G_CMD_MODE` 分发（STABILIZE/ALT_HOLD/
-  LOITER/GUIDED/RTL/LAND）
+  LOITER/GUIDED/RTL/LAND）；HIL 下 `hil_shmem.rs` 轮询 SRAM3 共享区注入真值、
+  回写执行器（与 USB 注入并存，互不干扰）
 
 **构建**：`python3 build_app.py --features real-sensors --out /tmp/flyctrl_real.bin`
 
@@ -47,7 +50,8 @@ Rust `no_std` 飞控，编译为真实 STM32F407 二进制，经 mcu_simulater �
 - `tests/x_*.rs` 联调验收：
   - `x_flyctrl_real_sensors`：真实驱动全链路（I2C 读 + GPS 定位 + hb 心跳）
   - `x_flyctrl_unlock_flight`：虚拟 RC 解锁 + 油门，控制律闭环电机输出
-  - `x_hil_mcusim`：HIL 双机闭环（SIL 物理 + MCU 控制）
+  - `x_hil_mcusim`：HIL 双机闭环（USB CDC，SIL 物理 + MCU 控制）
+  - `x_shmem_mcusim`：HIL 共享内存直连闭环（SRAM3 @0x2002_0000，无 USB/MAVLink）
   - `x_fault_injection` / `x_bus_trace`：调试平台
 
 **构建/测试**：`cargo test --test x_flyctrl_real_sensors`（机器慢时用 `--release`）

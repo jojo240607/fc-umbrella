@@ -75,7 +75,11 @@ cargo test --test sensor_fault              # 故障注入 6 项
 
 ## 4. HIL 双机闭环（MCU 控制 + PC 物理）
 
-固件 hil feature + USB CDC 链路：
+固件 hil feature + 两种 PC↔MCU 链路（USB CDC / SRAM3 共享内存直连），
+共享同一份 `step_hil` 事件驱动编排（control 阻塞 `HIL_EVT.wait()`，收到
+一帧真值执行一拍）。
+
+### 4.1 USB CDC 链路（x_hil_mcusim）
 
 ```bash
 cd mcu_simulater
@@ -83,10 +87,24 @@ cargo test --release --test x_hil_mcusim      # USB CDC 链路 ~53s，roll/pitch
 # 需 JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin（integrate.sh do_hil 已导出）
 ```
 
-> ⚠️ **已知失败项：`x_shmem_mcusim`**（SRAM3 共享内存直通闭环）。当前固件
-> 组合下 app 只初始化 3 个互斥量即停滞（`ctrl: imu_ok=false`，共享内存 IMU
-> 注入未生效），改动路径工程化之前即已失败（多产物组合对照确认非回归）。
-> 待固件 hil_shmem 契约对齐后修复，暂不纳入 `integrate.sh` 一键联调。
+### 4.2 SRAM3 共享内存直连（x_shmem_mcusim）
+
+无 USB / 无 MAVLink：PC 每 4ms 物理步把传感器真值/设定点/解锁写入 SRAM3
+（0x2002_0000），固件 `uplink` 每 1ms 轮询 `pc_seq` 变化后全量注入
+`SENSOR_FRAME` 并唤醒 control；`telemetry` 每 20ms 回写执行器/诊断，PC
+读回驱动 plant。**共享区布局双方硬编码一致**（`flyctrl/app/src/flyctrl/
+hil_shmem.rs` ↔ `mcu_simulater/tests/x_shmem_mcusim.rs`，改动任一侧必须
+同步另一侧）。
+
+```bash
+./scripts/integrate.sh shmem    # 一键联调步骤（已导出 JOC_APP_FLYCTRL=hil 产物）
+# 或手动：
+cd flyctrl && python3 build_app.py --features hil --out /tmp/flyctrl_hil.bin
+cd mcu_simulater && JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin cargo test --release --test x_shmem_mcusim
+```
+
+> 注意：共享内存契约仅在 **hil feature 固件**内编译。误加载默认/real-sensors
+> 固件时测试会给出可操作的产物指引（启动后校验 `hil=1`），而非误导性断言失败。
 
 ## 4.5 悬停闭环（可选，慢）
 

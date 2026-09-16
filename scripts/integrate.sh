@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# 一键联调：构建固件 + 全部联调测试（虚拟外设 / 解锁飞行 / SIL / HIL / 故障注入）。
+# 一键联调：构建固件 + 全部联调测试（虚拟外设 / 解锁飞行 / SIL / HIL / 共享内存 / 故障注入）。
 #
 # 用法：
-#   ./scripts/integrate.sh             # 跑全部（all：firmware+sensors+unlock+app+sil+hil+fault）
+#   ./scripts/integrate.sh             # 跑全部（all：firmware+sensors+unlock+app+sil+hil+shmem+fault）
 #   ./scripts/integrate.sh firmware    # 构建底座 ELF + 固件（joc-base / 正式飞控 / real-sensors / hil）
 #   ./scripts/integrate.sh sensors     # 虚拟外设全链路
 #   ./scripts/integrate.sh unlock      # 解锁飞行（控制律闭环）
 #   ./scripts/integrate.sh app         # 双分区整机验收（系统 + 正式飞控 app）
 #   ./scripts/integrate.sh sil         # SIL 回归（fly-sim-core + sensor_fault）
-#   ./scripts/integrate.sh hil         # HIL 双机闭环（USB CDC + 共享内存直通）
+#   ./scripts/integrate.sh hil         # HIL 双机闭环（USB CDC）
+#   ./scripts/integrate.sh shmem       # 共享内存直连闭环（SRAM3，hil 固件）
 #   ./scripts/integrate.sh fault       # 故障注入 / 总线嗅探
 #   ./scripts/integrate.sh hover       # （可选，慢）虚拟外设直通悬停闭环（60s 仿真）
 #
@@ -84,11 +85,10 @@ do_sil()      {
         bash -c "cd $ROOT/fly-simulater && cargo test --test sensor_fault"; }
 do_hil()      { need_elf || return 0
     step "HIL 双机闭环 x_hil_mcusim" 900 \
-        bash -c "export JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin; cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_hil_mcusim";
-    # 注：x_shmem_mcusim（SRAM3 共享内存直通闭环）当前机器/当前固件组合下
-    # 已知失败（固件只初始化 3 个互斥量即停滞，改动前即如此，非本次回归），
-    # 暂不纳入一键联调，作为后续修复项（见 docs/integration.md §4）。
-}
+        bash -c "export JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin; cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_hil_mcusim"; }
+do_shmem()    { need_elf || return 0
+    step "共享内存直连闭环 x_shmem_mcusim（SRAM3，hil 固件）" 900 \
+        bash -c "export JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin; cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_shmem_mcusim"; }
 do_fault()    { need_elf || return 0
     step "MCU 故障注入 x_fault_injection" 600 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_fault_injection";
@@ -102,16 +102,17 @@ do_hover()    { need_elf || return 0
 
 WHAT="${1:-all}"
 case "$WHAT" in
-    all)       do_firmware; do_sensors; do_unlock; do_app; do_sil; do_hil; do_fault ;;
+    all)       do_firmware; do_sensors; do_unlock; do_app; do_sil; do_hil; do_shmem; do_fault ;;
     firmware)  do_firmware ;;
     sensors)   do_sensors ;;
     unlock)    do_unlock ;;
     app)       do_app ;;
     sil)       do_sil ;;
     hil)       do_hil ;;
+    shmem)     do_shmem ;;
     fault)     do_fault ;;
     hover)     do_hover ;;
-    *) echo "未知步骤: $WHAT（可选 all/firmware/sensors/unlock/app/sil/hil/fault/hover）"; exit 2 ;;
+    *) echo "未知步骤: $WHAT（可选 all/firmware/sensors/unlock/app/sil/hil/shmem/fault/hover）"; exit 2 ;;
 esac
 
 echo ""
