@@ -139,7 +139,7 @@ MCU 指令级仿真上让 **real-sensors 固件真实二进制**读取**虚拟�
 cd mcu_simulater
 cargo test --release --test x_env_smoke          # 布局探针 + 悬停基线（2）
 cargo test --release --test x_env_motion         # 爬升/巡航/姿态摆动/协调转弯（4）
-cargo test --release --test x_env_faults         # IMU冻结/饱和、GPS掉链、baro阶跃/跳变/冻结（6）
+cargo test --release --test x_env_faults         # IMU冻结/饱和、GPS掉链、baro阶跃/跳变/冻结、磁力计干扰/冻结（8）
 cargo test --release --test x_env_noise_perturb  # 传感器噪声/偏置/漂移鲁棒性（5）
 cargo test --release --test x_env_longrun        # 长时悬停/巡航有界性（2）
 cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2）
