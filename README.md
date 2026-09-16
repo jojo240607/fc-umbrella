@@ -74,5 +74,6 @@ git -c protocol.file.allow=always submodule update --init --recursive
 - [`docs/architecture.md`](docs/architecture.md) — 整体架构（三层仿真栈 / 数据流 / 各层职责）
 - [`docs/engineering.md`](docs/engineering.md) — 各工程功能详解
 - [`docs/integration.md`](docs/integration.md) — 联调方式（虚拟外设 / SIL / HIL / 故障注入 / 解锁飞行）
+- [`docs/postmortem-rtos-pendsv-fallback.md`](docs/postmortem-rtos-pendsv-fallback.md) — 复盘：PendSV 空队列回退破坏睡眠链表（jOS 调度器缺陷定位与修复全过程）
 - [`scripts/integrate.sh`](scripts/integrate.sh) — 一键联调（构建固件 + 全部联调测试）
 - [`scripts/verify.sh`](scripts/verify.sh) — 一键回归（各仓库核心测试）
