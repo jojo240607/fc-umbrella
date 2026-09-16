@@ -192,9 +192,13 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
 ### 已知基线问题（回归时确认，非本轮引入）
 
 - **`x_hover_demo` / `x_hover_noise`（SIL 闭环）roll 漂移 ~40°**：SimLoop 物理
-  注入真值 IMU 下 EKF roll 在 35s 闭环中发散（30M/172M 虚拟时钟均复现，30M
-  下 roll 40.6°）。与 EnvHarness 虚拟外设链路（x_env_* 全绿）不同路，疑似 SIL
-  物理帧率与固件采样/锚定时序失配，待专项排查。
+  注入真值 IMU 下 35s 闭环中 roll 发散（30M/172M 均复现，30M 下 40.6°）。
+  **已定位并修复主因**：每循环 m.run(300K)=1.74ms@172M（校准后）≪ 物理步 4ms
+  → 控制率仅 ~108Hz → 闭环发散；改 688K 字节（=4ms@172M）使 control 拍与
+  物理 1:1 对齐 → **x_hover_demo 全绿**（末态姿态 0.0°、max|roll|=0.01°）。
+  **x_hover_noise 残余**（realistic IMU 噪声）：max|roll| 43°→30° 仍超断言
+  15°——EKF 垂向速度纯积分漂移（vz=-2.6 恒定、baro 不锚定速度）→ PID 高度
+  阻尼误判 → 姿态耦合，待专项（EKF 垂向速度/零偏观测）。
 - **`x_fault_injection::midrun_nack_isolates_slave`（bmp280 读计数冻结）**：
   mpu6050 NACK 注入后固件 bmp280(0x76) I2C 读停（30M/pristine 固件均复现，
   模拟器 START 清错误位无效）。疑似 RTOS I2C 驱动（rtos_app_sdk）NACK 后错误
