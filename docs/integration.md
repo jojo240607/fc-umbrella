@@ -4,12 +4,14 @@
 物理真值来自仿真平台**。以下按验证目标给出方式与命令。
 
 > 环境提示：机器内存紧张时（3GB + swap），debug 测试会慢 10 倍，
-> 建议 `cargo test --release`（约 60-100s/测试）。
+> 建议 `cargo test --release`。耗时差别很大：`x_vperiph_mcusim` ~101s、
+> `x_hover_env` ~422s、`x_hover_demo`（60s 演示）~770s。
 
 ## 0. 前置：构建固件与底座
 
 产物路径**不硬编码**：mcu_simulater 测试经 `mcu_simulater::artifact` 解析
-（环境变量 `JOC_BASE_ELF` / `JOC_APP_FLYCTRL` / `JOC_APP_DRVTEST` / `JOC_APP_SDK`
+（环境变量 `JOC_BASE_ELF` / `JOC_APP_FLYCTRL_REAL`（real-sensors）/ `JOC_APP_FLYCTRL`（hil）/
+`JOC_APP_DRVTEST` / `JOC_APP_SDK`
 → 壳工程规范布局 → 历史开发机路径兜底）。一键联调 `./scripts/integrate.sh firmware`
 即完成以下构建并导出变量：
 
@@ -17,10 +19,10 @@
 # RTOS 底座 ELF（joc-base 内，一次性；产物落壳工程规范布局 build_hil/）
 cd joc-base && cmake -S . -B build_hil -DMCU_SIM=ON -DRTOS_SELFTEST=OFF && cmake --build build_hil
 
-# 固件（flyctrl 内；两种 feature 产物）
-cd flyctrl
-python3 build_app.py --features real-sensors --out /tmp/flyctrl_real.bin
-python3 build_app.py --features hil            --out /tmp/flyctrl_hil.bin
+# 固件（两种 feature 产物）；产物名按联调约定固定，由壳脚本映射
+# （real-sensors -> /tmp/flyctrl_real.bin，hil -> /tmp/flyctrl_hil.bin）
+./scripts/build.sh real-sensors
+./scripts/build.sh hil
 ```
 
 单独跑某个测试时若产物不在规范布局（如独立仓库 clone），用环境变量覆盖：
@@ -69,7 +71,7 @@ cargo test --release --test x_flyctrl_app   # 里程碑：READY / RUST app mount
 ```bash
 cd fly-simulater
 cargo test -p fly-sim-core                 # 8 项（含磁力计几何/decl）
-cargo test -p fly-sim-core --test mag_hover # 磁锚定闭环悬停（ToyWorld）
+cargo test -p fly-sim-core --test mag_hover # 磁锚定闭环悬停（PhySdkWorld）
 cargo test --test sensor_fault              # 故障注入 6 项
 ```
 
@@ -108,7 +110,12 @@ cd mcu_simulater && JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin cargo test --release --
 
 ## 4.5 悬停闭环（可选，慢）
 
-虚拟外设直通闭环长仿真（60s 悬停演示），需 real-sensors 产物 `/tmp/flyctrl_real.bin`：
+虚拟外设直通闭环长仿真（60s 悬停演示），需 real-sensors 产物 `/tmp/flyctrl_real.bin`
+（`./scripts/build.sh real-sensors`）：
+
+> ⚠️ 当前快照 `x_hover_demo` / `x_hover_noise` **FAIL**：测试侧 PWM 读回漏改
+> （joc-base eec5b58 改 TIM5 后只补了 `x_vperiph`）；修掉读回后 `x_hover_demo`
+> 稳定悬停 44s 再发散。详见 `docs/verification-2026-09-17-hover.md`。
 
 ```bash
 cd mcu_simulater
@@ -162,6 +169,10 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
   动态断言可按场景时间做相位对齐（turn 断 yaw 累计旋转 ≈ ω×t）。剩余 ~1.4 倍
   错配为**固件固有**（EKF 每拍执行超 4ms 预算，真实 MCU 同量级），非模拟器
   时钟失真。校准副作用与修复见下方"本轮修复"表（GPS 观测链路、FDIR 误判）。
+- **2026-09-17 复验补充**：上述 172M 只描述**推流时钟**（虚拟从设备节拍）。固件
+  **自身**时钟（SysTick）与场景对齐由 c62ec21 的 `run_ms` 负责，按固件 SysTick 计数
+  收敛，步进粒度 `RETIRED_BYTES_PER_MS=95_600` 字节/ms；闭环不再用裸 `run(count)`
+  口径对齐。详见 `docs/verification-2026-09-17-hover.md` §5。
 - **EstState 内存布局（实测）**：`VehicleState(72B) + health(1B@72) +
   armed(1B@73)`——repr(C) enum 未标判别值时 ARM 编译为 1B（非 C int 4B），
   `read_est` 按实测偏移读取（hb 行 armed=true 时 EST+73=1、EST+76=0 实证）。
@@ -195,7 +206,11 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
   注入真值 IMU 下 35s 闭环中 roll 发散（30M/172M 均复现，30M 下 40.6°）。
   **已定位并修复主因**：每循环 m.run(300K)=1.74ms@172M（校准后）≪ 物理步 4ms
   → 控制率仅 ~108Hz → 闭环发散；改 688K 字节（=4ms@172M）使 control 拍与
-  物理 1:1 对齐 → **x_hover_demo 全绿**（末态姿态 0.0°、max|roll|=0.01°）。
+  物理 1:1 对齐。**该结论基于已被 c62ec21 `run_ms` 取代的 688K 口径，勿再引用。**
+  **2026-09-17 复验：当前快照 `x_hover_demo` FAIL**（max|roll|=179.7°）——主因是
+  测试侧 PWM 读回漏改（joc-base eec5b58 改 TIM5 后只补了 `x_vperiph`，漏了
+  x_hover_demo/noise/env）；修掉读回后稳定悬停 **44s 再发散**（max|roll|=37.4°），
+  44s 发散未定位。详见 `docs/verification-2026-09-17-hover.md`。
   **x_hover_noise 残余**（realistic IMU 噪声）：max|roll| 43°→30° 仍超断言
   15°。**2026-09 诊断**（6 组二分实验：accel_bias/gyro_bias/att_kd/vib_amp/
   att_kp 单独归零或增强均无效）确认是 **SIL 闭环（ToyWorld 简化物理 + 固件
@@ -208,6 +223,8 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
   系统性不足 + 白噪声持续激励。真机有真实螺旋桨气动阻尼（时间常数 ~0.3s），
   稳定裕度预计远好于 ToyWorld；**真机前调优项**（控制环噪声鲁棒性：输入滤波/
   增益裕度/阻尼整定），SIL 侧不再追（物理模型无代表性增益）。
+  **2026-09-17 复验：ToyWorld 已从源码退场，SIL/mag_hover 现用 `PhySdkWorld`——
+  以上「无阻尼简化物理」诊断失去物理依据，需在 PhySdkWorld 上重做。**
 - **`x_fault_injection::midrun_nack_isolates_slave`（bmp280 读计数冻结）**：
   mpu6050 NACK 注入后固件 bmp280(0x76) I2C 读停（30M/pristine 固件均复现，
   模拟器 START 清错误位无效）。疑似 RTOS I2C 驱动（rtos_app_sdk）NACK 后错误
@@ -230,5 +247,5 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
 | 解锁后电机仍零 | SBUS 帧间锁存缺失（旧固件）；确认 ch5>1700（raw 编码） |
 | EKF 高度收敛到 ~0 | 虚拟 baro 海平面 vs GPS 高度不一致：`attach_default_sensors_with_baro_height(4.0)` 对齐 |
 | EKF 磁锚定发散 | 非零场磁力计须与 EKF 初值自洽（绕 Z 纯 yaw 修正 + 门控） |
-| 测试报产物缺失（ELF / app.bin） | 产物路径经 `mcu_simulater::artifact` 解析：先跑 `./scripts/integrate.sh firmware` 构建到规范布局，或用 `JOC_BASE_ELF` / `JOC_APP_*` 环境变量指向已有产物 |
+| 测试报产物缺失（ELF / app.bin） | 产物路径经 `mcu_simulater::artifact` 解析：先跑 `./scripts/build.sh real-sensors`（默认落点 `/tmp/flyctrl_real.bin`）或 `./scripts/integrate.sh firmware`，或用 `JOC_BASE_ELF` / `JOC_APP_FLYCTRL_REAL`（real-sensors）/ `JOC_APP_FLYCTRL`（hil）环境变量指向已有产物 |
 | debug 测试极慢 | 机器内存压力/swap：用 `--release` |

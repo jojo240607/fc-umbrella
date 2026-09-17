@@ -23,7 +23,7 @@ Rust `no_std` 飞控，编译为真实 STM32F407 二进制，经 mcu_simulater �
   LOITER/GUIDED/RTL/LAND）；HIL 下 `hil_shmem.rs` 轮询 SRAM3 共享区注入真值、
   回写执行器（与 USB 注入并存，互不干扰）
 
-**构建**：`python3 build_app.py --features real-sensors --out /tmp/flyctrl_real.bin`
+**构建**：`./scripts/build.sh real-sensors` → `/tmp/flyctrl_real.bin`
 
 ## fly-simulater/ — 物理仿真平台
 
@@ -73,8 +73,8 @@ SET_POSITION_TARGET_LOCAL_NED。固件 uplink 与地面站共用。
 
 ## physics/ — 物理引擎
 
-phy-sdk：真实刚体引擎（fly-sim-core `phy` feature 的可选依赖；缺失时 SIL
-用 ToyWorld 替身物理）。
+phy-sdk：真实刚体引擎（`fly-sim-core` 默认 feature `phy`；SIL/mag_hover 均用
+`PhySdkWorld`。历史 ToyWorld 替身已退场，文档旧提法失效）。
 
 ## groundctrl/ — 地面站
 
