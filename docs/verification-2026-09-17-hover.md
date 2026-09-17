@@ -70,6 +70,39 @@ t=44s 起   下沉 → 落地 → 翻滚，max|roll|=37.4°
 **残留：第 44s 起的发散未定位。** 覆盖盲区：现有 MCU 在环悬停最长验证是
 `vperiph_hover_sustained` 的 **12s**，**12s→44s 之间没有任何测试覆盖**。
 
+### 4.1 定位（2026-09-18 复现）
+
+先修掉了阻挡复现的测试自死锁（`x_hover_demo` 诊断块持 `Machine` 锁时再调
+`dump_est_state`）——修后测试能跑完（墙钟 ~333s）。每秒 `[demo]`（物理真值）与
+`[demo-est]`（固件 EKF，`VehicleState@0x2000_9084`）显示：
+
+- t=0..37s：物理与 EKF 均为零振荡（水平速度 <0.005、电机差动 0.000）。
+- t≈38s 起：**物理滚转角速度 `plant_w` 指数增长**（0.02→0.06→0.13→0.26→0.43
+  rad/s，每 ~1.4s 翻倍），到 t≈45.8s 物理滚转 ±17°，随后翻机落地。
+- 同期**固件 EKF 的姿态估计几乎不动**（roll 估计 0.00→0.34°），电机差动也只有
+  0.00x —— 控制器基本没在纠。
+
+用 20ms 分辨率对照（临时 `[hr]` 诊断，已撤）拿到决定性一行：
+
+```
+t=45.00  plant_roll=-1.87°  plant_w=(-0.430,..)  inj_g=(-0.430,..)  est_roll=-0.00°
+```
+
+`plant_w`（物理机体系角速度）与 `inj_g`（注入固件的陀螺 `FlySimState.imu_gyr`）
+**逐位相等** → 注入链路正确；而固件 EKF 的 `att` 仍是单位四元数。固件 EKF 预测步
+（`flyctrl/core/src/estimator/ekf.rs:271`）`self.att = self.att.integrate(wx,wy,wz,dt)`
+是无条件用陀螺积分的——陀螺 0.43 rad/s 必然推动 att。att 不动 ⇒ **固件实际读到的
+BMI088 陀螺为 0**。
+
+**结论**：44s 发散 = 姿态环没有有效角速率阻尼。固件拿不到陀螺 → `att_kd` 阻尼项
+失效 → 退化为「纯 P 姿态环 + 一步延迟」→ 极点落在单位圆外 → 从数值噪声慢速自激
+（~38s 可见、46s 翻机）。同一机制解释了 `x_hover_noise`（噪声激励使发散快得多）
+与 `x_vperiph` 12s 通过（12s < 38s）。
+
+根因在**固件读 BMI088 陀螺的路径**（real-sensors 用 `ImuBmi088`/SPI；
+`joc-base/src/drv/bmi088.c` 的 GYR 块读 / `gyro_cs` 片选 / RTOS SPI DMA），
+不在被控对象、也不在控制律增益。加速度通道正常（悬停成立），故是陀螺专属路径。
+
 ## 5. 文档漂移清单（本次一并处理）
 
 | 位置 | 旧断言 | 现状 |
@@ -82,9 +115,11 @@ t=44s 起   下沉 → 落地 → 翻滚，max|roll|=37.4°
 
 ## 6. 待办
 
-- [ ] **44s 发散定位**（本项复验的核心残留）。在「已修测试侧读回」的工作区基线上做；
-      12s 与 44s 之间无覆盖，先补中间尺度的观测点。
-- [ ] `x_hover_noise` 在 `PhySdkWorld` 上重做诊断（旧结论建立在已删除的 ToyWorld 上）。
+- [x] **44s 发散定位**：已定位到「固件 BMI088 陀螺读取为 0 → 姿态环无阻尼 → 纯 P
+      环慢速自激」（见 §4.1）。**待修**：固件/RTOS 的 BMI088 gyro 读取路径。修后
+      重跑 `x_hover_demo` 应能过 60s；同时 `x_hover_noise` 大概率一并改善。
+- [x] `x_hover_noise` 重诊断：与 44s 发散同机制（同一陀螺缺失），非 ToyWorld 遗留；
+      待陀螺修复后重跑确认。
 - [x] (b) 产物路径纪律收口：`build.sh` 对齐 `/tmp/flyctrl_real.bin`；mcu_simulater
       的 10 个测试与 `fly-sim-server` 的 `VP_APP` 统一走
       `mcu_simulater::artifact::flyctrl_real_app_bin()`（新增 env
