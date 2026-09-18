@@ -191,6 +191,25 @@ bytes/ms 浮动）→ 换后端/固件即失效。
 A/B：旧步进 PASS、对齐后 FAIL（`yaw_total=0.66`）。角速率断言（0.3~0.7 rad/s）两边
 都过 ⇒ 该阈值按失配行为标定，需按对齐后的真实场景重标（另需核对 env 磁力计/yaw 锚定）。
 
+### 4.4 EKF 时间基：控制/EKF 用实测周期（1a，已修）
+
+时钟对齐（§4.3）只保证了 harness 的 run 预算不错；**固件内部**还有一处标称 vs 实际：
+控制任务 `msleep(4)` + EKF/控制工作量常超 4ms 预算 → 实际拍率掉到 ~102Hz（周期 ~9.8ms），
+而 `HilContext.dt` 是编译期常量 4ms → EKF 每 9.8ms 只积 4ms，**系统性少积 ~2.4×**。
+
+实测（注入 1.0rad/s 陀螺、SysTick 走 1000ms）：姿态只积 **0.407rad**；`turn_yaw_rate_tracks`
+的场景真值 1.293rad、EKF 只 0.662rad（比值 0.512）。已排除磁锚定/重力锚定（分别置 0 复测
+仍 0.66）。
+
+**修复（flyctrl eca97f2）**：控制循环用「本轮与上轮 `tick_count()` 差」作真实 dt
+（clamp 1..50ms）喂 `hil.dt`——控制循环顶部本就有未用的 `let _dt` 占位，即原设计意图。
+- `turn_yaw_rate_tracks` 的 `yaw_total`：**0.66(错) → 1.289（真值 1.293）**；
+- 回归：`x_vperiph` 3/3、`x_hover_demo` PASS、`x_env_smoke/faults/noise_perturb/longrun/rc` 全过。
+
+**遗留（既有、被 yaw 失败挡住未跑到）**：同测试 `pos_norm` 只 0.08~0.13（期望 >3m），
+即 EKF 位置估计未跟随圆周（GPS 位置已注入）——另立待办。
+**(b)** 压缩控制/EKF 工作量使其回到 4ms 预算，列为后续优化。
+
 ## 5. 文档漂移清单（本次一并处理）
 
 | 位置 | 旧断言 | 现状 |
