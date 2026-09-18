@@ -240,6 +240,27 @@ dt = Δretired / VIRTUAL_INSNS_PER_SEC;   // 推流标定口径 172e6
 `JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin`）。顺带修了 `tick_count` 导入落在 `not(hil)`
 门内导致 hil 固件构建失败的问题。
 
+### 4.6 x_hover_noise 残余：速率环极限环（已验证有效，但被基础设施阻塞）
+
+**定位**：dt 修复后 `x_hover_noise` 由 73°→22/38°。逐秒 EKF 全状态显示主导是
+**姿态速率环自激**：估计角速度 `w_y` 摆到 ±1.4 rad/s、电机差动饱和 → pitch 38°。
+IMU 配置 `gyro_noise=0.003`（很小）⇒ 不是陀螺噪声，是闭环极限环。
+
+**修法 a（速率环 omega 低通）验证有效**：`attitude.rs` 的速率环 `att_kp·err − att_kd·ω`
+直接用 EKF 的 `gyro−bias`，噪声直达电机。给 omega 加一阶低通（τ=0.02s≈50Hz）后：
+**max|roll| 22.1→7.3°、max|pitch| 38.2→12.7°（都进 15° 断言）**；残余水平漂移 5.00m
+（阈值 5.0）擦边。
+
+**但被阻塞**：该低通要 3~5 个 f32 状态，而控制任务栈 `STACK_CTRL=8192` 已极紧
+（EKF 局部矩阵 1.6KB；加 4 字段即 `UC_ERR_READ_UNMAPPED`）。扩容到 12288 后，
+**链接器 `.bss` 位移 → 测试硬编码的 `EST_STATE`(0x2000_9084)/`SENSOR_SEQ`(0x2000_b5dc)
+等地址失效** → `x_env_motion` 4/4 挂（`FDIR health=238` = 读到错内存）。A/B 确认：
+回退低通、只留栈扩容，仍 4/4 挂 ⇒ 是 `.bss` 位移，不是低通本身。
+
+**结论**：低通有效但要栈；栈要扩容；扩容改 `.bss` 布局；而**测试把 `.bss` 地址硬编码**。
+已回退到绿色态。**前置修复**：把测试可见的全局（`EST_STATE`/`SENSOR_SEQ`/…）用链接
+section **钉在固定地址**（或让测试从 `app.elf` 符号解析），然后重上速率低通。
+
 ## 5. 文档漂移清单（本次一并处理）
 
 | 位置 | 旧断言 | 现状 |
