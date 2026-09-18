@@ -210,6 +210,36 @@ A/B：旧步进 PASS、对齐后 FAIL（`yaw_total=0.66`）。角速率断言（
 即 EKF 位置估计未跟随圆周（GPS 位置已注入）——另立待办。
 **(b)** 压缩控制/EKF 工作量使其回到 4ms 预算，列为后续优化。
 
+### 4.5 vperiph 推流时间基（遗留 pos_norm 的真因，已修）
+
+§4.3 把 EnvHarness 改成时钟对齐（`run_ms`）后，`x_env_motion::turn_yaw_rate_tracks`
+的 `pos_norm` 只剩 0.1（期望 >3m）——EKF 位置不跟随圆周。逐层定位：
+
+- 场景真值 pos ~40m、EKF pos ~0.1（完全没跟）；
+- 心跳 `gps=true`、`gpsd=0`（=真值下向，正确），但**GPS 速度 `gv=[0,0,0]`**（真值 ~10m/s）；
+- A/B：旧字节预算步进下 `gv≈真值`、EKF 位置速度都对；换成任何 `run_ms(dt)`（13/16/22ms）
+  都 `gv=0` ⇒ **不是步长，是步进方式**。
+
+**根因**（`machine/mod.rs`）：虚拟从设备/UART 推流的时间步
+
+```rust
+dt = Δretired / VIRTUAL_INSNS_PER_SEC;   // 推流标定口径 172e6
+```
+
+是按【每次 `run()` 调用】算的；`run_ms` 内部按 `RETIRED_BYTES_PER_MS/2` 小块推进 →
+从设备落帧粒度被改碎 → GPS GGA/RMC 投递碎 → 固件解析不到 RMC 速度。更本质的是：
+**推流钟（172e6）与固件 SysTick 钟（实测 ~95.6K~104.5K 字节/ms）不是同一个钟**，
+文档「校准后场景时间 = 固件时间」在这一点并不成立。
+
+**修复**：`dt = Δretired / (RETIRED_BYTES_PER_MS*1000)` —— 推流时间 ≡ 固件时间，
+与 `run()` 分块无关。`turn_yaw_rate_tracks`：`gv` 0→≈真值、EKF pos 跟随、**PASS**。
+
+**回归**：`x_sensor_rate`、`x_vperiph`、`x_env_smoke/motion/faults/noise_perturb/longrun/rc`、
+`x_flyctrl_real_sensors/unlock_flight`、`x_toml_topology`、`x_fault_injection`、
+`x_shmem_mcusim`、`x_hil_mcusim`、`x_hover_demo` 全过（HIL 两个需
+`JOC_APP_FLYCTRL=/tmp/flyctrl_hil.bin`）。顺带修了 `tick_count` 导入落在 `not(hil)`
+门内导致 hil 固件构建失败的问题。
+
 ## 5. 文档漂移清单（本次一并处理）
 
 | 位置 | 旧断言 | 现状 |
