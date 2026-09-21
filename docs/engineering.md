@@ -5,7 +5,9 @@
 Rust `no_std` 飞控，编译为真实 STM32F407 二进制，经 mcu_simulater 运行。
 
 **Features（build_app.py --features）**：
-- `real-sensors`：真实驱动（MPU6050/BMP280/QMC5883/U-blox/SBUS）经 I2C/UART 总线读写
+- `real-sensors`：真实驱动（**BMI088**(SPI3 双片选) / BMP280 / QMC5883 / U-blox / SBUS）
+  经 SPI/I2C/UART 总线读写。（历史：IMU 曾经是 MPU6050(I2C)，见 flyctrl 提交
+  `e541b47 feat(sensors): IMU 从 MPU6050(I2C) 切换 BMI088(SPI)`。）
 - `hil`：HIL 双机闭环——USB CDC（MAVLink HIL_SENSOR/SET_POSITION 上下行）+
   SRAM3 共享内存直连（`app/src/flyctrl/hil_shmem.rs`，无 USB/MAVLink 零协议通道），
   设定点来自 PC 仿真器
@@ -44,7 +46,11 @@ Rust `no_std` 飞控，编译为真实 STM32F407 二进制，经 mcu_simulater �
 
 - Unicorn Cortex-M4F 执行固件 `.elf`；`Machine` 装配 STM32F407 布局 + 外设
 - **虚拟外设**：
-  - I2C 从设备：mpu6050 / bmp280（高度可配置，`StaticBaro::at_height`）/ qmc5883
+  - **SPI 从设备：BMI088**（双片选 accel+gyro，SPI3；`vperiph/spi/bmi088.rs`）——
+    与固件 `ImuBmi088("bmi088")` 对应；陀螺量程 **±2000 dps**（16.4 LSB/dps），
+    加速度 ±3g（10920 LSB/g）
+  - I2C 从设备：bmp280（高度可配置，`StaticBaro::at_height`）/ qmc5883；
+    `mpu6050` 仍在（旧路径，供 I2C IMU 回归）
   - UART 推流：GPS NMEA / SBUS 遥控（通道可配）
   - USB OTG：CDC 链路（HIL 上下行）
 - `tests/x_*.rs` 联调验收：

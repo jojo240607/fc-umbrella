@@ -138,7 +138,7 @@ cargo test --test sensor_fault                  # GPS 偏置/卡死、IMU 冻结
 
 面向**飞控软件稳定性**的环境压力测试：不经 SIL/HIL 物理闭环，直接在
 MCU 指令级仿真上让 **real-sensors 固件真实二进制**读取**虚拟外设**
-（I2C mpu6050/bmp280/qmc5883→i2c1；UART GPS NMEA→uart1、SBUS→uart2），
+（**SPI BMI088→spi3**；I2C bmp280/qmc5883→i2c1；UART GPS NMEA→uart1、SBUS→uart2），
 传感器数据来自 **EnvScenario 运动学真值 + 扰动 + 故障** 逐拍写入的
 `FlySimState`。测试断言走共享内存（EST_STATE / SENSOR_SEQ），不依赖日志。
 
@@ -197,8 +197,10 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
   垂向速度纯 IMU 积分；x[9] 垂向加计零偏仅由速度观测驱动。
 - 协调转弯场景从 t=0 即恒定 bank（无建立过程）→ 陀螺无法建立 roll，测试不断言
   roll 精确值。
-- GPS Doppler（r_vel=0.3）长时间约束下 EKF 水平速度有界但偏高（固件时间慢 8 倍
-  放大位置观测交叉协方差），longrun 断言"有界"而非精确收敛。
+- GPS Doppler（r_vel=0.3）长时间约束下 EKF 水平速度有界但偏高（实测 4~5 vs 真值 3）。
+  ⚠️ 旧文档把原因归为“固件时间慢 8 倍放大位置观测交叉协方差”——**归因已失效**
+  （2026-09-21 实测场景时间 = 固件时间 1:1）。现象仍在，**真实根因待重定**
+  （候选：`r_vel=0.3` 偏松 / GPS 20Hz 帧间样本保持），故 longrun 仍只断言“有界”。
 
 ### 已知基线问题（回归时确认，非本轮引入）
 
@@ -225,6 +227,13 @@ cargo test --release --test x_env_rc             # RC 解锁 / 掉链失联（2�
   增益裕度/阻尼整定），SIL 侧不再追（物理模型无代表性增益）。
   **2026-09-17 复验：ToyWorld 已从源码退场，SIL/mag_hover 现用 `PhySdkWorld`——
   以上「无阻尼简化物理」诊断失去物理依据，需在 PhySdkWorld 上重做。**
+  **2026-09-21 结案 ✅：已在 PhySdkWorld 上重做并定位。** 上述「极限环 / 增益裕度
+  不足」的判断**不成立**——真因是**仿真双时基相位自由漂移**（控制拍周期均值
+  4.0000ms 但真抖，而物理按固定 4ms 步进 ⇒ PWM 回读落在控制周期内的相位随机），
+  属**测量假象**；`mcu_simulater::clock::run_one_control_tick` 锁相修复后，
+  **`x_hover_noise` 60s 带噪持续悬停通过 ✓**（max|roll| 10.26°、max|pitch| 13.02°，
+  闸 15°）。详见 `docs/test-roadmap.md`「解除阻塞的过程」与
+  `docs/stage4-outer-loop-findings.md` P18 顶部更正块。
 - **`x_fault_injection::midrun_nack_isolates_slave`（bmp280 读计数冻结）**：
   mpu6050 NACK 注入后固件 bmp280(0x76) I2C 读停（30M/pristine 固件均复现，
   模拟器 START 清错误位无效）。疑似 RTOS I2C 驱动（rtos_app_sdk）NACK 后错误
