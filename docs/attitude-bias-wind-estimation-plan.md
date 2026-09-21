@@ -1,0 +1,186 @@
+# 姿态/零偏/风 估计架构改进方案（2026-09-21）
+
+> **状态：提案，未实施。** 本文件是"H/M 口径统一"过程中暴露的三个真实缺陷的
+> 结构性解法。实施前应先定本方案，因为其中一步要**撤掉**现有的"比力锚定"——
+> 那正是当前 4 项 H 场测试失败的根源。
+
+---
+
+## 1. 问题（全部有实测证据）
+
+统一 H/M 两场口径后暴露的三个缺陷，以及它们共同的结构性原因：
+
+| # | 缺陷 | 实测证据 |
+|---|---|---|
+| A | **固件重力锚定（`att_alpha=0.02`）在湍流风下劣化闭环** | H 场 B3 档位置漂移 3.39m → **19.22m**；姿态 13.6°→20.9°；连带 4 项测试失败 |
+| A′ | 但锚定对**无风**档是必需的 | 无风档 9.36m（且**仍在增长**）→ 3.12m **且有界** |
+| B | **陀螺零偏从未被估计** | `x[6..8]` 是状态、传播时也被扣除，却**从未被任何观测更新**。分离实验：只注入陀螺漂移 = 9.36m（与"陀螺+加计"逐位相同），只加计 = 1.52m（= 无注入）⇒ 漂移**完全**由陀螺零偏贡献 |
+| C | **水平外环 P-only** | 恒风稳态偏移 `e = des_v/kp_xy`；已实现积分修复：3.39m → **0.85m**（4×），且 0.85m 是**波动性扰动下限**（非参数问题） |
+
+**共同的结构性原因**：我们的估计器是"**位置 EKF + 一个独立的固定-α 姿态锚定**"
+（仓库注释自认"在协方差之外做固定-α 直接修正"）。锚定**同时**承担两个互相冲突的
+职责：既是陀螺零偏**唯一的观测源**，又是湍流下最大的**污染源**。这两件事被绑死在
+一个固定增益上 ⇒ 无解。
+
+**同一个权衡在参考设计里不存在** —— 见下节。
+
+---
+
+## 2. 参考设计（已核官方文档）
+
+### PX4 EKF2 的状态表（原文）
+
+> "…an estimate of the following states: Quaternion … Velocity … Position …
+> **IMU gyro bias estimates - X, Y, Z (rad/s)**
+> **IMU accelerometer bias estimates - X, Y, Z (m/s²)**
+> Earth Magnetic field components … Vehicle body frame magnetic field bias …
+> **Wind velocity - North, East (m/s)**
+> Terrain altitude (m)
+> To improve stability, an **'error-state' formulation** is implemented"
+
+出处：<https://docs.px4.io/main/en/advanced_config/tuning_the_ecl_ekf.html>
+
+### ArduPilot EKF（原文）
+
+> "The filter has other states … **These include gyro biases, Z accelerometer bias,
+> wind velocities, compass biases and the earth's magnetic field.** These other states
+> aren't modified directly by the 'State Prediction' step but **can be modified by
+> measurement updates**."
+
+同页确认**创新一致性门限**：`EKF_EAS_GATE` —"scales the threshold used for the
+airspeed measurement **innovation consistency check**"。
+
+出处：<https://ardupilot.org/dev/docs/extended-kalman-filter.html>
+
+### 对照
+
+| 设计要点 | PX4 EKF2 | ArduPilot EKF | 我们 |
+|---|---|---|---|
+| 陀螺零偏 | ✅ 状态 | ✅ 状态 | ⚠️ 状态存在但从未被更新 |
+| 加计零偏 | ✅ 3 轴 | ✅ Z 轴 | ⚠️ 仅 Z，速度观测弱驱动 |
+| **风速度** | ✅ **状态 (N,E)** | ✅ **状态** | ❌ **完全没有** |
+| 零偏观测量 | 各测量**创新** | 各测量**创新** | ❌ 仅比力锚定（固定 α） |
+| 门控 | **创新一致性** | **创新一致性**（`EKF_*_GATE`） | ❌ 固定 α + 手调阈值门 |
+| 结构 | 单一紧耦合 ESKF | 单一 EKF | ⚠️ 位置 EKF + 独立姿态锚定 |
+
+**关键结论**：参考设计用**风状态 + 阻力模型解释水平力**，所以湍流风**不会**被
+误归因到姿态/零偏。我们的实现里那部分力**无处可去** ⇒ 只能冲进姿态锚定。
+**因此 A 项不是"门控没调好"，而是"缺一个风状态"。**
+
+---
+
+## 3. 目标与验收判据
+
+**目标**：一次拿到三头 ——
+1. 无风档位置漂移 **≤ 3m**（拿陀螺零偏抑制的收益；现行 3.12m 已达标）
+2. B3 档位置漂移 **≤ 3.4m**（回到 `att_alpha=0` 时的水平）
+3. 当前 4 项失败转绿：`mag_hover::hover_stable_with_mag_heading_active`、
+   `sil::sil_hover_gps31hz_10min_stable`、
+   `avoidance::avoidance_keeps_greater_clearance_than_bare`、`monte_carlo::monte_carlo_benchmark`
+
+**回归守卫**（现成）：`att_est` 22、`att_ctrl` 13、`pos_ctrl` 17、`pos_est` 6、
+`mag_hover` 2、`sil` 6、`powertrain` 21、以及 `wind_turb_scan` 的各项曲线。
+
+**度量工具**（现成）：`wind_turb_scan::{imu_bias_separation_no_wind,
+drift_anomaly_probe, ki_xy_scan_at_beaufort3, att_acc_gate_scan, att_acc_ac_gate_scan,
+gyro_bias_estimation_scan, east_roll_separation_at_beaufort3}`。
+
+---
+
+## 4. 方案：三阶段，每阶段独立可验、可回退
+
+### 阶段 1（小、确定）：**零偏改由速度/位置创新观测**
+
+**动机**：B 项的根因是"陀螺零偏唯一的观测源是比力锚定"。参考设计里零偏由
+**各测量创新**驱动（ArduPilot 原文："can be modified by measurement updates"）。
+速度/位置观测**不依赖"比力 = 重力"**这个脆弱前提。
+
+**做法**：在现有的速度/位置卡尔曼更新里，把零偏状态与速度误差的**交叉协方差**
+接上（加计零偏 `x[9]` 已有先例：`AB_VEL_GAIN` 就是"仅由速度观测弱驱动"）。
+先只接**垂向**（与 `x[9]` 对称），再加水平。
+
+**判据**：无风档漂移下降（陀螺零偏被观测掉）；`att_est`/`pos_ctrl` 不劣化。
+
+**风险**：低（不动结构，只加交叉增益）。**回退**：一个旋钮置 0 即回到现状。
+
+---
+
+### 阶段 2（治本、较大）：**加风状态 (N,E) + 阻力模型**
+
+**动机**：A 项的根因。参考设计中风是状态（PX4/ArduPilot 均然）。
+
+**状态**：`N: 10 → 12`，新增 `x[10] = Vw_n`、`x[11] = Vw_e`（世界系风速度，NED）。
+
+**观测方程的来源**：我们有现成的力阻模型 `plant.rs::aero_drag_body`：
+`F_drag = 0.5·ρ·Cd·v_rel·|v_rel|`，其中 `v_rel = v_body - R^T·V_wind`。
+风的**可观测性**来自：水平速度/位置观测（风造成的位置漂移会被 GPS 看到）
++ 姿态观测（风使机体倾斜）。工程上可先按"风近似为随机游走、由速度创新驱动"实现，
+并用已知阻力系数把"风 → 水平加速度"作为**预测项**加入（这是 PX4 的路线）。
+
+**关键收益**：湍流风那部分水平力**被风状态吸收**，不再冲进姿态 ⇒ A 项的权衡
+**从结构上消失**（而不是靠门控去分）。
+
+**与现有锚定的关系**：本阶段**不动** `att_alpha`；风状态上线后，锚定的污染应
+显著下降（可实测验证）。
+
+**判据**：B3 档 ≤3.4m **且**无风档 ≤3m（两头同时满足 —— 这是门控方案做不到的）。
+
+**风险**：中（新增状态 + 观测方程 + 可观测性/整定）。**回退**：风状态默认可关闭
+（旋钮），回到阶段 1 行为。
+
+---
+
+### 阶段 3（根治）：**固定-α → 创新一致性/NIS 门控**
+
+**动机**：我们的 `att_alpha`/`mag_alpha` 是**协方差之外**的直接修正，门控靠手调
+阈值（`w`/`w_align`/`w_gyro`/新增的 `a_h` 系）。实测手调门会出灾难点
+（瞬时门控阈值 2.0 处无风档恶化到 88.73m）。参考设计用**创新一致性检验**
+（NIS = `νᵀ S⁻¹ ν`，阈值可调）——**自适应**，无需人拍。
+
+**做法**：把姿态锚定改造成**真正的卡尔曼更新**（把比力/磁当作观测量、进协方差），
+门控用 NIS 卡方检验。这样：
+- 平静时创新小 → 全权重融合（拿零偏抑制收益）
+- 湍流/机动时创新大 → 自动降权/拒绝（不污染）
+- 与阶段 2 的风状态配合：风被解释了 ⇒ 剩余创新才是真正的姿态误差 ⇒ 检验有效
+
+**判据**：A′ 项收益保持（无风≤3m）且 A 项不劣化；`att_est` 全部绿。
+
+**风险**：高（改估计器核心）。**回退**：保留 `att_alpha` 路径为对照开关。
+
+---
+
+## 5. 当前 4 项红的处置（方案内明确）
+
+它们**是阶段 1/2 的验收项**，不是要回退隐藏的问题：
+
+| 测试 | 期望在哪个阶段转绿 |
+|---|---|
+| `mag_hover::hover_stable_with_mag_heading_active` | 阶段 2（风/姿态耦合被解耦后） |
+| `sil::sil_hover_gps31hz_10min_stable` | 阶段 2 |
+| `avoidance::avoidance_keeps_greater_clearance_than_bare` | 阶段 2 或 3 |
+| `monte_carlo::monte_carlo_benchmark` | 阶段 3（NIS 门控改善统计一致性） |
+
+若阶段 1/2 完成后仍红，则重新归因（不排除它们本身是独立缺陷）。
+
+---
+
+## 6. 已放弃的路线（记录，避免重走）
+
+| 路线 | 为何放弃（均有实测） |
+|---|---|
+| 水平速度低通 | 所有 tau 下无风档恒 9.4m；B3 仅 6% 边际改善 |
+| 积分上限 `I_XY_MAX` | 逐位无变化（积分根本没到上限） |
+| 瞬时水平加速度门控 | 强烈非单调，2.0 处无风 88.73m、1.5 处 B3 48.62m |
+| 交流能量门控 | 稳健（无灾难点）但 B3 只救到 10.12m，**回不到 3.39m 基线** |
+
+⇒ 这四个失败共同指向同一结论：**问题不在"门控/滤波怎么调"，而在"缺一个风状态"。**
+
+---
+
+## 7. 立即的下一步
+
+**从阶段 1 开始**（小、确定、可回退），其完成后再评估阶段 2 的工程量。
+
+阶段 1 的第一次实验已可做：给 `x[9]`（垂向加计零偏）之外的**陀螺零偏**接上
+速度创新驱动，量无风档漂移的下降幅度。**注意**：阶段 1 的验证需要 `att_alpha>0`
+（陀螺零偏观察的另一种源），故当前 `att_alpha=0.02` 的统一定案应**保持**。
