@@ -1161,3 +1161,27 @@ test result: ok. 4 passed; 0 failed; 1 filtered out; finished in 84.44s ✓
      并在测例里写明等价关系 ✓ —— 但注意：本诊断关心的正是【长时长下的稳态】✗
      ⇒ 缩短会改变结论 ✗ ⇒ 故应【保持 65s】并接受 38 分钟 ✓（用户已确认可接受 ✓）
 ```
+
+### §5.24 ✅ ③ 进展：x_env_faults **8/8 通过**（2026-09-21）
+
+**转换（复用 §5.22 配方 ✓）**：`x_env_faults` 7 处纯步数循环 → 场景时间循环 ✓；
+2 处带变量循环（`for s in 0..N`）按 **13/4 = 3.25** 缩放界并注明 ✓（等价时长 ✓）。
+`x_env_longrun` 2 处纯步数循环同样转换 ✓。
+
+**实测** ✓✓
+```
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 106.36s ✓
+★原两项失败（GPS 恢复后 health 未回 Nominal ✗ / baro 阶跃稳态 dev 16.7m ✗）
+  ⇒ 都是【时长不足】（锁相后按步数窗口缩 3.25× ✗）⇒ 转换后一并解决 ✓✓
+```
+
+**③ 进度**
+| 测例 | 状态 |
+|---|---|
+`x_env_smoke` | ✅ 2/2 ✓ |
+`x_env_rc` | ✅ 2/2 ✓ |
+`x_env_motion` | ✅ 4/4 ✓ |
+`x_env_noise_perturb` | ✅ 4/4 ✓（gyro_bias 长测例 ⏳ ✗）|
+`x_env_faults` | ✅ **8/8** ✓ |
+`x_env_longrun` | 🔶 已转换 ✓，**待跑**（最长 ✗，约 18 分钟 ✗）|
+| `x_task_stall` | ⬜ |
