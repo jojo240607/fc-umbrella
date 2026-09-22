@@ -194,3 +194,32 @@ qhat*dq  vs R(q̂)·R(δ) = 7.07e-2 ✗    | vs R(δ)·R(q̂) = 5.93e-9 ✓✓
 
 **⇒ 与 §5 的符号陷阱同类**（文献写法 → 本项目语义的转写风险 ✗），
 两次都被数值工装抓到 ✓✓ —— 印证文档 §5 的硬要求与 §2 的硬约定清单之必要 ✓。
+
+### 12.7 ★★★ 参照符号定义到手 —— 三条约定判定被【独立证实】（2026-09-21）
+
+取法（**GitHub API 端点成功** ✓ —— raw 端点反复超时 ✗）：
+```
+curl -sSL "https://api.github.com/repos/PX4/PX4-Autopilot/contents/
+  src/modules/ekf2/EKF/python/ekf_derivation/derivation.py?ref=main"
+# 返回 base64 ⇒ python base64 解码 ⇒ 775 行 / 25846 字符 ✓
+```
+
+**关键原文行**
+```python
+153: state_t["quat_nominal"] = Rot3(Quaternion(xyz=(state_error["theta"]/2), w=1)) * state["quat_nominal"]
+169: state_t_pred["quat_nominal"] = state_t["quat_nominal"] * Rot3(Quaternion(xyz=(input_t["gyro"]*dt/2), w=1))
+181: state_pred["quat_nominal"]   = state["quat_nominal"]   * Rot3(Quaternion(xyz=(input["gyro"]*dt/2), w=1))
+189: delta_q = Quaternion(state_t_pred) * Quaternion(state_pred).conj()
+```
+
+**⇒ 三条证实（参照 vs 我的数值判定 ✓✓✓）**
+| 项 | 参照（标准语义）| 本项目（`A*B`=先 A 再 B）| 我的判定 | 结论 |
+|---|---|---|---|---|
+误差扰动（153）| `δq(θ/2) * q_nom`（左乘）| 同为左乘 | §12.4：左乘 = local | ✅ **一致** |
+标称速率更新（169/181）| `q_nom * δq(ω dt)`（右乘）| 语义相反 ⇒ 本项目须写【左】| §12.6 的修正 | ✅ **修正正确** |
+误差提取（189）| `q_true * q_nom⁻¹` | 同 | 数值工装同此 | ✅ **一致** |
+
+**⇒ 意义**
+1. 三个静默陷阱的修正**全部获参照背书** ✓✓（扰动约定 / 乘法顺序 / 误差提取）
+2. `derivation.py` 已在手 ⇒ **`∂δv/∂δθ` 块可按参照源码定形** ✓✓（不必再手推 ✗）
+3. 它同时是"用 sympy 生成 F"的**参照实现** ✓（本项目可照搬该路线 ✓）
