@@ -871,3 +871,29 @@ x_flyctrl_modes / x_flyctrl_app / x_hil_mcusim 的 **EnvHarness 引用数 = 0** 
 · §5.9 的 2×2（H 场 ✓）显示：dt=13ms + b=0.05 + 65s ⇒ 两估计器都翻 ✗
   ⇒ 但 6.5s 场景下 Legacy 未翻 ✓ ⇒ **ESKF 在 6.5s 就出现 36° 倾斜** ✗ ⇒ 差距在收敛速度 ✓
 ```
+
+### §5.14 ★★★M 场时间推进方式**并不统一**（2026-09-21，用户要求核对 ✓）
+
+**用户问题** ✓："所有 M 场验收测试的 dt 都是 13 吗？请检查下再回复" ✓
+**答案** ✓：**不是** ✗ —— M 场内部**两族并存** ✓✓
+
+| 测例 | 时间推进 | 实际 dt |
+|---|---|---|
+`x_env_faults` / `x_env_longrun` / `x_env_motion` / `x_env_noise_perturb` / `x_env_rc` / `x_env_smoke` | `EnvHarness` ✓ | **13 ms** ✓ |
+`x_task_stall` | `EnvHarness` ✓ | **13 ms** ✓ |
+`x_hover_env` | `EnvHarness` + `run_budget` ✗ | **混用** ✗ |
+`x_hil_mcusim` | `run_budget`×8 + `*0.004` ✗ | **自建 4 ms** ✗ |
+`x_hover_demo` / `x_hover_noise` | `*0.004` / `2500.0` ✗ | **自建 4 ms** ✗ |
+`x_sensor_rate` / `x_vperiph_mcusim` | `*0.004` ✗ | **自建 4 ms** ✗ |
+`x_shmem_mcusim` | `run(300_000)` / `run_ms(4.0)` ✗ | **自建 4 ms** ✗ |
+`x_flyctrl_*` / `x_jos_*` / `x_fault_*` / `x_telemetry` … | `run_budget` ✗ | **未显式表达 dt** ✗ |
+
+**⇒ 三点结论** ✓✓
+1. **`x_env_*` 族（+`x_task_stall`）走 `EnvHarness` ⇒ 13 ms** ✓ = 用户所说的**验收基线** ✓（不动 ✓）
+2. **`x_hover_*` / `x_sensor_rate` / `x_hil_mcusim` / `x_vperiph_mcusim` / `x_shmem_mcusim`
+   本来就自建 4 ms** ✓ ⇒ 我改 `STEP_DT_MS` **对它们无影响** ✗
+   （与 §5.12 的 stash 实验完全一致 ✓：`x_hil_mcusim` 不用 harness ⇒ 失败与步长无关 ✓）
+3. `x_env_motion.rs:9` 的 **249.7Hz 是【固件实测能力】** ✓，与 harness 的 13 ms 标定是**两回事** ✓
+   ⇒ 我此前混为一谈 ✗（§5.13 ✓）
+**★教训** ✓：**核对"某常量是否全局统一"必须逐文件查，不能靠推理** ✗ ——
+本会话第 11 次同类（"把不同量/不同范围当成同一个"✗）。
