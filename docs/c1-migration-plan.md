@@ -931,3 +931,37 @@ pub fn step(&mut self) {
 ★教训（第 12 次）：**"步长/周期"这类词在不同层（场景 / 固件 / 估计器）含义不同** ✗ ——
    必须写清是【哪一层的周期】✓
 ```
+
+### §5.16 ★★★★★核实：控制 250Hz（4ms）· 传感器 500Hz（2ms）—— 13ms 明确不符 ✗（用户指正 ✓）
+
+**用户指正** ✓："上次调整控制周期到 250Hz、传感器周期到 500Hz，你检查下" ✓ ⇒ **用户正确** ✓✓
+
+**代码依据** ✓✓
+```
+flyctrl/app/src/flyctrl/mod.rs:12     "sensors prio=5 周期 **2ms**：采 IMU/RC/Baro/Mag/GPS → 写共享帧" ✓
+flyctrl/app/src/flyctrl/sensors_task.rs:40  "let sample_dt: f32 = 0.002;  // **500Hz 采样**" ✓
+mcu_simulater/tests/zz_ctlprof.rs:359-360   "标称：控制 CONTROL_PERIOD_TICKS=4 拍 ⇒ **250Hz**；
+                                             sensors sample_dt=0.002s ⇒ 2 拍 ⇒ **500Hz**" ✓
+```
+
+**⇒ `EnvHarness` 的 13ms 与设计不符** ✗✓
+```
+设计：控制 4ms（250Hz ✓）· 传感器 2ms（500Hz ✓）
+现状：`EnvHarness` 每步 13ms 才 `write_state` 一次 ✗
+  ⇒ 固件 sensors 任务（2ms 周期 ✓）在 13ms 内被唤醒约 6.5 次，却每次都读到**同一份数据** ✗
+  ⇒ **等效传感器率 74.9Hz** ✗ —— 与设计 500Hz 相差 **6.7×** ✗✓
+⇒ 这正是用户所说"改了部分测试用例的周期但没改完整" ✓✓：
+  `x_hover_*`/`x_sensor_rate`/`x_hil_mcusim` 等【已改 4ms】✓；
+  `x_env_*` 族（`EnvHarness`）**仍是迁移前的 13ms** ✗ ⇒ M 场内部不一致 ✗✓
+```
+
+**★正确修法（比 §5.12 我提的"改 4ms"更准 ✗✓）**
+```
+`EnvHarness::STEP_DT_MS` 应为 **传感器周期 2ms** ✓
+  —— 不是控制周期 4ms ✗，也不是 13ms ✗
+  因为 `EnvHarness` 每步只 `write_state` 一次 ✓ ⇒ 只有 2ms 才与"500Hz 传感器"一致 ✓
+⇒ 同时所有按【步数】写的等待/超时需 ×6.5 重标定 ✗
+  （这正是上次迁移做了一半、留下部分 13ms 测例的原因 ✓）
+※ §5.12/§5.13 的"回退到 13ms"是【为保住当前可跑基线】的临时处置 ✓；
+  **真正的修法是迁到 2ms + 重标定步数** ✓（属"补齐未完成的迁移"✓）
+```
