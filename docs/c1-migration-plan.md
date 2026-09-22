@@ -368,13 +368,19 @@ A8 湍流 20°/3Hz | 1.725 | **1.674** | −0.052 ✓ **改善** |
 类型安全依据 ✓：`HilContext<E: Estimator, C>` 已是泛型 ✓；`AnyEstimator` 实现同一 trait ✓
 （9 方法逐一委托 ✓，漏一个即编译不过 ✓）。
 
-**⚠️ 诚实登记（未在本机验证编译 ✗）** ✓
+**✅ 已在本机目标工具链验证编译（2026-09-21，更正上一版登记 ✓）** ✓✓
 ```
-cargo check --manifest-path app/Cargo.toml
-  ⇒ error: unwinding panics are not supported without std（rtos-app-sdk ✗）
-  ⇒ 这是【环境/工具链】限制（需 RTOS 目标 + panic=abort ✓），**与本次改动无关** ✓
-⇒ 本条为"未验证改动" ✗ ⇒ 必须在实机 CI / 目标工具链上构建通过后方可发布 ✓
-  （改动本身极小且类型安全 ✓，但按纪律不得视为已验证 ✓）
+✗ 上一版登记："cargo check --manifest-path app/Cargo.toml 失败 ⇒ 未验证" ✗
+   —— **用法错**✗：应用有专门构建脚本 `flyctrl/build_app.py` ✓
+      （目标 `thumbv7em-none-eabihf` ✓ + profile `panic="abort"` ✓；
+       直接 cargo check 不吃 profile ⇒ 报 unwinding ✗，与改动无关 ✓）
+✅ 正确构建：`python3 build_app.py`
+     Finished release profile in 2.84s ✓
+     arm-none-eabi-gcc/objcopy 链接产出 ✓
+     [OK] app.bin = 114712 bytes（须 < 393216 ✓）
+⇒ **产品默认切 ESKF 的改动已在【目标工具链】上构建通过** ✓✓
 ```
+**教训** ✓：验证要用【项目自带的构建入口】✓，而不是自己拼 cargo 命令 ✗
+（与"先核对约定/工装"同一条纪律 ✓，本会话已多次应验 ✓）。
 
 **回退路径** ✓：`AnyEstimator::legacy()`（一行 ✓）；Legacy 实现与全部测试保留 ✓。
