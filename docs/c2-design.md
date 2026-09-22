@@ -152,3 +152,30 @@ curl -sSL "https://api.github.com/repos/PX4/PX4-Autopilot/contents/src/modules/e
 - 参数：`ekf2_mag_noise = 5e-2` Gauss ✓ / `ekf2_mag_e_noise = 1e-3` ✓ / `ekf2_mag_b_noise = 1e-4` ✓
 - **过程噪声条件添加**（仅当 `P_ii < sq(mag_noise)` ✓，cov.cpp 180–200 ✓）
 - `resetMagEarthCov` 把 mag_I 方差设为 `sq(mag_noise)` ✓（cov.cpp 375–377 ✓）
+
+### §11.1 ✅ 剩余逻辑位置**已定位**（2026-09-21）
+
+**文件**：`src/modules/ekf2/EKF/aid_sources/magnetometer/mag_control.cpp`（681 行 ✓ 已取到 ✓）
+（`aid_sources/` 是辅助源目录 ⇒ mag 逻辑在此 ✓；另同目录有 `mag_fusion.cpp` ✓）
+
+**关键行（原文 ✓）**
+```cpp
+ 73:  resetMagBiasCov();
+223/232/282/311: resetMagStates(_mag_lpf.getState(), reset_heading);
+341/342: resetMagEarthCov();  resetMagBiasCov();          // ★触发条件所在 ✓
+401:  void Ekf::resetMagStates(const Vector3f &mag, bool reset_heading)
+419:      resetMagEarthCov();
+429/434:  resetMagBiasCov();
+438:      resetMagHeading(mag);
+```
+
+**⇒ 剩余三项全部落在此文件**
+| 剩余项 | 对应位置 |
+|---|---|
+① mag reset 的**触发条件** | `mag_control.cpp` 73 / 341–342 的**调用上下文** ✓ |
+② `mag_B` 的**重置/估计策略** | `resetMagStates` 内 `resetMagBiasCov()` 的分支 ✓ |
+③ **heading 处理** | ★**`reset_heading` 参数** ✓✓ —— 参照用的是
+**事件驱动的重置策略**（何时连同航向一起重置 ✓），**不是**我那个几何代理 ✗ |
+
+**⇒ 这解释了本会话的偏离** ✓：我用"每步去相关航向"✗；
+参照是"**在特定事件重置 mag 状态（含航向）**"✓ —— 语义完全不同 ✓✓
