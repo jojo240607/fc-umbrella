@@ -447,3 +447,36 @@ tests/x_env_noise_perturb.rs:83
 ② ESKF 的 `bg` 在固件条件下未收敛 ✗（需打印 bg 历程 ✓）
 ③ 我新加的【重锚定默认 0.01】在固件下与磁链交互 ✗（需对照臂 ✓）
 ```
+
+### §5.2 ★★★真因定位（2026-09-21）—— 适配器**拒绝**了固件的 VIO/RTK 观测 ✗✓
+
+**证据** ✓（`flyctrl/core/src/hil.rs::step_hil`，固件与 SIL 共享单步 ✓）
+```
+line  95:  self.est.step(self.dt, imu_sample, gps, None)   ← IMU + GPS ✓
+line 107:  self.est.update_alt(alt - self.baro_ref)        ← 气压 ✓
+line 113:  self.est.update_vio(vio)                        ← VIO（带噪模拟 ✓）
+line 114:  self.est.update_rtk(rtk)                        ← RTK ✓
+line 116:  self.est.update_mag(mag)                        ← 磁 ✓
+```
+
+**根因** ✓✓：我的适配器把 VIO/RTK 实现为【**显式拒绝 + 计数**】✗
+（`n_vio_refused` / `n_rtk_refused` ✓ —— 出发点是"绝不静默 no-op" ✓，方向正确 ✓）
+⇒ **固件里这两路观测被丢弃** ✗✓ ⇒ **ESKF 比 Legacy 少两路观测** ⇒
+带陀螺零偏时倾角劣化到 **0.634 rad（36.3°）** ✗✓（要求 < 0.35 rad ✗）。
+
+**为何 H 场没暴露** ✓：H 场测例（§4 / A/B 表 ✓）通过 `run_secs` 直接把
+GPS 位置/速度喂给滤波器 ✓ ⇒ 从不走 `update_vio`/`update_rtk` ✗
+⇒ **H 场与 M 场的观测通路不同** ⇒ 覆盖盲区 ✓✓（M 场再次证明其价值 ✓）
+
+**★源码注释本身也在提示** ✓：`hil.rs` 原文
+"`update_vio`/`update_rtk` 对**非 `EkfEstimator`** 实现为 no-op" ✓
+—— 即**当年假定的实现是 Legacy** ✗；换成 ESKF 后同一句变成【观测缺失】✗。
+
+**修复方案** ✓（照 `trait_def.rs` 的语义 ✓）
+```
+update_vio(Some(v)) → 中等位置噪声 + 较小速度噪声 ⇒ 映射到 pos/vel 更新（指定 R ✓）
+update_rtk(Some(r)) → 极小位置噪声                   ⇒ 映射到 pos 更新（更小 R ✓）
+⇒ 需给 `Eskf` 增加【可指定 R 的 pos/vel 更新接口】✓（现有接口固定 R ✗）
+⇒ 保留计数（证明在运行 ✓，A11 范式 ✓）
+★这是迁移计划步 2 遗留缺口的补齐 ✓（当时选择"登记"✓，现在必须实现 ✓）
+```
