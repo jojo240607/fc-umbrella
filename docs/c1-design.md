@@ -1,3 +1,7 @@
+> **注（2026-09-21 ✓）**：本文中的实现文件 `estimator/c1.rs` 已改名为 **`estimator/eskf.rs`** ✓
+> （标准术语 Error-State Kalman Filter；该文件现含 C1+C2 两项扩展 ✓）。
+> ★**C1 已定为默认估计方案** ✓ —— 依据见 `docs/c2-design.md` §14。
+
 # C1 设计文档（误差状态 EKF）—— 待评审版
 
 > 依据：`docs/test-roadmap.md` §12–§15 + 4 轮参照核对（PX4 EKF2 真实源码 ✓）。
