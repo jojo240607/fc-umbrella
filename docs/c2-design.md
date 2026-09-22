@@ -323,3 +323,35 @@ C1 分轴： yaw 2.430° | roll/pitch 3.500°
    在 |a_world| 小时 ⇒ 用比力方向约束倾斜 ✓（加速度门控 ✓）
 ③ 再跑 §4 两档 ⇒ 倾斜误差应显著下降 ⇒ 才谈"两档都不劣于 Legacy"✓
 ```
+
+### §13.1 参照的【重力辅助】实现（`aid_sources/gravity/gravity_fusion.cpp` ✓ 已取到）
+
+```cpp
+ 49: void Ekf::controlGravityFusion(const imuSample &imu)
+ 53:   measurement_var = max(sq(_params.ekf2_grav_noise), sq(0.01f));
+ 61:   // fuse gravity observation if our overall acceleration isn't too big
+ 62:   _control_status.flags.gravity_vector = (ImuCtrl::GravityVector & _params.ekf2_imu_ctrl);
+ 81:   ... 0.25f);                                   // innovation gate（新息门控 ✓）
+112:  if (gravity_vector && !innovation_rejected && !accel_clipping) {
+114:     measurementUpdate(K, H, ...)                 // 逐分量 ✓
+```
+
+**设计要点（照此实现 ✓）**
+| # | 要点 |
+|---|---|
+① | 由**比力**构造**重力方向观测** ✓（= Legacy"重力锚定"的**正式量测版** ✓）|
+② | ★**按"总加速度不大"启用** ✓✓（原文注释 line 61 ✓）⇒ **加速度门控** ✓ |
+③ | 逐分量 + **新息门控**（0.25 ✓）|
+④ | `accel_clipping` 时**禁用** ✓ |
+⑤ | 噪声取 `max(sq(ekf2_grav_noise), sq(0.01))` ✓ |
+
+**⇒ C2 上线路径（更新 ✓）**
+```
+①（已完成）速度 H 无需改 ✗ —— 已更正：H=[0 I 0] 本就正确 ✓
+② **新增重力辅助量测**（照本节 ✓）：
+   · 观测量：由比力得重力方向（|a| 归一化 ✓）
+   · **加速度门控**：|a_world| 大 ⇒ 关闭 ✓（照参照 line 61 ✓）
+   · H = 重力方向对 δθ 的耦合 ✓ ⇒ **须数值对照验证** ✓
+   · 逐分量 + 新息门控 ✓
+③ 跑 §4 两档 ⇒ 倾斜直流（现 −3.216° ✗）应显著下降 ✓ ⇒ 再谈"两档都不劣" ✓
+```
