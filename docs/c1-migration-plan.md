@@ -965,3 +965,42 @@ mcu_simulater/tests/zz_ctlprof.rs:359-360   "标称：控制 CONTROL_PERIOD_TICK
 ※ §5.12/§5.13 的"回退到 13ms"是【为保住当前可跑基线】的临时处置 ✓；
   **真正的修法是迁到 2ms + 重标定步数** ✓（属"补齐未完成的迁移"✓）
 ```
+
+### §5.17 ★★★锁相范式已找到并落地（2026-09-21，按用户指示 ✓）—— 剩余为"步数重标定"
+
+**用户指示** ✓："找到之前调试 250Hz 的那些提交，看看当时同步改了哪些测试用例是怎么改的，
+然后同步到所有测试用例中" ✓
+
+**找到的范式** ✓✓：提交 **`982e0cf`「控制步进锁相到控制拍边界」**
+```
+其正文原文 ✓："HilStepper 让 MCU 按【固定 dt_ms】推进，而固件控制拍有自己抖动的周期
+（实测均值恰好 4.0000ms（250.00Hz）、std 0.84ms、2.24~5.22ms）⇒ 两个时基相位自由漂移
+ ⇒ PWM 回读相位随机 ⇒ 任何代码改动只要移动零点几 ms 就改变结果。
+ 新增 `clock::run_one_control_tick()`：**以控制拍为唯一时基**（分段 run_budget 推进、
+ 轮询 CTRL_TICKS，不做任何写入、不改变固件行为）"
+```
+
+**迁移清单** ✓（本次核对所得 ✓）
+| 状态 | 测例 |
+|---|---|
+✅ **已锁相** | `x_hover_demo` ✓ `x_hover_env`（部分 ✓）`x_hover_noise` ✓ |
+❌ **仍固定 dt** | `x_env_faults` `x_env_longrun` `x_env_motion` `x_env_noise_perturb` `x_env_rc` `x_env_smoke` `x_task_stall`（+ `x_hover_env` 部分 ✗）|
+
+**本次已落地** ✓：`EnvHarness::step()` 改为**锁相 + 按实测流逝推进场景** ✓
+```rust
+let t_before = self.m.systick_ms();
+run_one_control_tick(&mut self.m)?;               // 固件恰好一拍控制 ✓（时基=固件 ✓）
+let elapsed_ms = t_after - t_before;              // ★实测流逝 ✓（不假设 dt ✗）
+self.scn.advance(elapsed_ms / 1000.0);            // 场景按其实测推进 ✓
+write_state(...);
+// 锁相漂移守卫：长期均值须贴合名义 4ms（250Hz ✓），超 200ms 即 panic ✓
+```
+
+**⇒ 现状与剩余** ✓
+```
+· 锁相 harness 【已可运行】✓（x_env_smoke 36.7s 跑完 ✓）
+· 失败项 = 【预期内】✗：测例用【固定步数】✗，锁相后每步 ≈4ms（原 13ms ✗）
+  ⇒ 同样步数 = 仿真时间只剩 1/3.25 ✗ ⇒ 尚未收敛完 ✓
+  —— 正是那批测例头部写明"断言仍是按旧前提设计、**尚未重写**"✗ 的部分 ✓
+⇒ 剩余工作 = **把步数/时间预算按新时基重标定** ✓（并显式化判据窗口 ✓，照 982e0cf 第③条 ✓）
+```
