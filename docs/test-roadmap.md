@@ -1265,3 +1265,36 @@ T4 | 实现 C1（δθ/δv/δp/δb_g/δb_a ✓）| 与 Legacy 逐项 A/B ⇒ 显�
 
 **⚠️ 顺序要求**：**先完成 T1，再动 T4 的估计器** ✗ ——
 否则新估计器一旦有问题，**我们会失去"哪个更好"的判断力** ✓（本会话 16 次静默失误的教训 ✓）
+
+### §14.11 ★ T2 参照核对（2026-09-21，`EKF/covariance.cpp` 原文 ✓）
+
+取到 `Ekf::predictCovariance()`（原文节选 ✓）：
+```cpp
+const float dt = 0.5f * (imu_delayed.delta_vel_dt + imu_delayed.delta_ang_dt);
+...
+P = sym::PredictCovariance(_state.vector(), P,
+        imu_delayed.delta_vel / imu_delayed.delta_vel_dt, accel_var,
+        imu_delayed.delta_ang / imu_delayed.delta_ang_dt, gyro_var, dt);
+
+if (!_control_status.flags.heading_observable) {
+    // Zero heading correlations to prevent unintended heading corrections
+    // when heading is not observable
+    uncorrelateAndLimitHeadingCovariance();
+}
+```
+以及 `initialiseCovariance()` 中的状态索引（佐证状态构成 ✓）：
+`State::vel.idx` / `State::pos.idx` / `State::gyro_bias.idx` / `State::accel_bias.idx` /
+`State::mag_I.idx` ✓；另有 `bad_acc_vertical` 或 `delta_vel_clipping` 时**提高加计过程噪声** ✓。
+
+**⇒ 三条关键发现（写入 C1 规格 ✓）**
+1. ★**F 矩阵【不是手写的】** —— 来自符号生成模块 `sym::PredictCovariance` ✓✓
+   ⇒ 参照实现用**符号/自动生成**规避手推雅可比错误 ✓
+   ⇒ 而"约定/符号类静默错误"正是本会话的高发类别 ✗
+   ⇒ **C1 硬要求：F 必须经符号或数值对照验证 ✓，不得手写后直接启用** ✗✓
+2. ★**航向不可观测有显式处理** ✓✓：`heading_observable` 为假 ⇒ **清零航向相关协方差** ✗
+   （"防止不可观测时的非预期航向修正" ✓）—— 而本项目 A4/A12 恰都是 yaw 问题 ✓⇒ **直接对症** ✓
+3. **过程噪声数据驱动** ✓：检测到 `bad_acc_vertical` / `delta_vel_clipping`（削顶=饱和 ✓）
+   ⇒ 提高加计过程噪声 ✓ ⇒ "数据不可信时让滤波器更不信任它" ✓（与 A13 饱和同源 ✓）
+
+**待补（T2 剩余 ✓）**：`sym::PredictCovariance` 的符号定义源文件（生成器输入 ✓）；
+门控的实际调用点（`fuse*` 帮助函数 ✓）；`mag_B` 的融合方式 ✓。
