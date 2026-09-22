@@ -1113,3 +1113,25 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 · **判定前先打印两条时间轴的对应关系** ✓（否则会把"正确行为"误判为缺陷 ✗✓）
 · 判据加【采样数下限】防空洞 ✓；先打印实测量级再判定 ✓
 ```
+
+### §5.22 ✅ ③ 进展：x_env_motion **4/4 通过**（2026-09-21）
+
+**机械转换（可复用 ✓）**：`for _ in 0..N {` → `let _t0 = h.scn.t(); while h.scn.t()-_t0 < N*0.013 {`
+—— **保持原意时长 N×13ms ✓**，只切换时基 ✓（锁相后步数 ≈4ms ✗ ⇒ 按步数窗口会缩短 3.25× ✗）
+
+**实测** ✓✓
+```
+[turn] est_omz=[0.499,0.499] max|Δω|=0.0009 |Δyaw|=【1.30 rad】✓ max|roll|=2.2° pos_norm=39.9m ✓
+test result: ok. 4 passed; 0 failed ✓（117.26s ✓）
+★|Δyaw| 0.40 → 1.30 rad ✓ —— 与 0.5 rad/s × 2.6s 的【原意】完全吻合 ✓✓
+```
+
+**③ 进度**
+| 测例 | 状态 |
+|---|---|
+`x_env_smoke` | ✅ 2/2 ✓ |
+`x_env_rc` | ✅ 2/2 ✓ |
+`x_env_motion` | ✅ **4/4** ✓ |
+`x_env_faults` | ⬜ |
+`x_env_noise_perturb` | ⬜（已按固件时间重写 ✓）|
+`x_env_longrun` | ⬜（最长 ✗）|
