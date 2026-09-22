@@ -179,3 +179,41 @@ curl -sSL "https://api.github.com/repos/PX4/PX4-Autopilot/contents/src/modules/e
 
 **⇒ 这解释了本会话的偏离** ✓：我用"每步去相关航向"✗；
 参照是"**在特定事件重置 mag 状态（含航向）**"✓ —— 语义完全不同 ✓✓
+
+### §11.2 ★★★决定性发现：参照用【代数反解】求 `mag_B`，依赖 WMM 独立先验
+
+**原文**（`mag_control.cpp` 401–455 ✓）
+```cpp
+if (_wmm_earth_field_gauss 可用) {
+    mag_I = _wmm_earth_field_gauss;                        // ★独立先验（地磁模型 ✓）
+    if (|mag_I_old − mag_I| > 0.01 gauss) resetMagEarthCov();
+    if (!reset_heading && yaw_align) {
+        if (mag_I_reset) {
+            mag_B = mag − R_to_body · _wmm_earth_field_gauss;   // ★★【直接反解】✓✓
+            resetMagBiasCov();
+        }   // 否则保留原 mag_B
+    } else { mag_B.zero(); resetMagBiasCov(); }
+    if (reset_heading) resetMagHeading(mag);
+} else {
+    mag_B.zero(); resetMagBiasCov();                        // 无 WMM ⇒ 归零
+    mag_I = _R_to_earth · mag;                              // 用量测+姿态给 mag_I
+}
+```
+
+**⇒ 这解释了本会话最深的困惑** ✓✓
+1. 参照 **不靠渐近分离** ✓ —— 而是 `mag_B = 量测 − R·mag_I` **一次解出** ✓✓，
+   前提是 **`mag_I` 由 WMM 独立给定** ✓ 且 `yaw_align` ✓。
+2. 而**渐近分离本质上需要独立的 `mag_I` 参考** ✗ —— 没有它，
+   硬铁的贡献与 `mag_I` 的调整**在数学上不可分**（除转动外的充分激励）✓
+3. 当 `mag_I` **由量测自身**给出时（本会话 else 分支做法 ✗）⇒ `mag_B ≡ 0` ✗✓
+   —— **正是实测现象**（mag_B 停在 0/近初值 ✓✓）
+
+**⇒ 结论** ✓✓：**"分离弱"是【先验缺失】的必然结果** ✗✓，不是实现 bug ✓
+（本会话 0 算法缺陷的账本再次成立 ✓）
+
+**⇒ 对本项目 C2 的含义** ✓
+- **必须提供独立的 `mag_I` 先验**（真实系统用 WMM ✓；本项目可用
+  "已知地磁矢量"或"由 GPS 航迹/对齐阶段得到的场"✓ —— 即**测试应给出该先验** ✓，
+  而非从量测反推 ✗）
+- 有了先验 ⇒ **`mag_B` 可代数反解**（一次 ✓）⇒ 无需等待长时间分离 ✓✓
+- `reset_heading` 的判据与 `yaw_align` 的配套 ⇒ 即剩余项③的正解 ✓
