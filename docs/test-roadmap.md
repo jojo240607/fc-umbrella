@@ -1191,3 +1191,30 @@ quat(4) + vel(3) + pos(3) + gyro_bias(3) + accel_bias(3) + mag_I(3) + mag_B(3) +
 - `F` 矩阵的具体形式（`covariance.cpp` ✓）
 - 门控的**实际调用点**（本轮 `yaw_fusion.cpp` 抓取未命中内容 ⇒ 门控在共享的
   `fuseYaw`/`fusion` 帮助函数里 ✓，需改取 `ekf_helper.cpp` / `covariance.cpp` ✓）
+
+### §14.10 参照核对进度与限制（2026-09-21）
+
+**已成功核对 ✓**（3 轮，均为 `curl` raw 取单文件 ⇒ 低成本 ✓）：
+| 轮 | 目标 | 结果 |
+|---|---|---|
+1 | `EKF/common.h` | **全部门控参数**：均为 "innovation consistency gate size (**STD**)" ✓✓ |
+2 | `EKF/` 目录（GitHub API）| 文件清单；**无 `state.h`** ⇒ 状态在 `ekf.h` ✓ |
+3 | `EKF/ekf.h` | **24 维状态**（含 `accel_bias` ✓ 与 **`mag_B`** ✓★）|
+
+**未完成（网络限制 ✗）**：
+- `EKF/covariance.cpp`（F 矩阵具体形式）—— **抓取超时**（`curl` exit=124 ✗）
+- 门控的**实际调用点**（`yaw_fusion.cpp` 未命中 ⇒ 应在共享 `fuse*` 帮助函数 ✓）
+
+**⚠️ 本轮的过程教训（记下以防复发 ✗）**：
+第一次抓取时我写了 `curl -sSL ... 2>/dev/null` ✗ ⇒ **失败完全无声**（得到空文件而无任何提示 ✗）——
+**正是本会话反复打击的"静默失误"** ✓✓。去掉 `2>/dev/null` 并加 `-w "http=%{http_code} size=%{size_download}"`
+后，立刻看到 **exit=124（超时）** ✓ ⇒ 原因清晰 ✓。
+**⇒ 规则：任何 I/O 都不得静默吞掉错误输出** ✓（本项目已因此误判多次 ✓）。
+
+**恢复后继续的方法（已明确 ✓）**：
+```bash
+curl -sSL -w "http=%{http_code} size=%{size_download}\n" \
+  -o covariance.cpp https://raw.githubusercontent.com/PX4/PX4-Autopilot/main/src/modules/ekf2/EKF/covariance.cpp
+# 备选：git clone --filter=blob:none --sparse PX4-Autopilot && git sparse-checkout set src/modules/ekf2/EKF
+# 备选：GitHub API contents?ref=main 逐个取（本轮第 2 轮用的就是这个 ✓）
+```
