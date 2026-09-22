@@ -1135,3 +1135,29 @@ test result: ok. 4 passed; 0 failed ✓（117.26s ✓）
 `x_env_faults` | ⬜ |
 `x_env_noise_perturb` | ⬜（已按固件时间重写 ✓）|
 `x_env_longrun` | ⬜（最长 ✗）|
+
+### §5.23 ✅ ③ 进展：x_env_noise_perturb 4/4（跳过 gyro_bias 长测例）（2026-09-21）
+
+```
+test result: ok. 4 passed; 0 failed; 1 filtered out; finished in 84.44s ✓
+（--skip gyro_bias_tolerated ✓：该测例为 65s 固件时间场景 ⇒ 约 16250 步 ≈ 38 分钟 ✗）
+```
+
+**③ 进度**
+| 测例 | 状态 |
+|---|---|
+`x_env_smoke` | ✅ 2/2 ✓ |
+`x_env_rc` | ✅ 2/2 ✓ |
+`x_env_motion` | ✅ 4/4 ✓ |
+`x_env_noise_perturb` | ✅ **4/4** ✓（gyro_bias_tolerated ⏳ 长测例待跑 ✗）|
+`x_env_faults` | ⬜ |
+`x_env_longrun` | ⬜（最长 ✗）|
+
+**⇒ 长测例的处置** ✓（`gyro_bias_tolerated` ≈38 分钟 ✗）
+```
+它是【关键诊断】✓（36° 问题 ⇒ 分辨"传感器粒度"vs"ESKF 零偏收敛" ✓）
+⇒ 建议：作为【专用长跑】单独执行 ✓（不混在常规回归里 ✗）
+   · 可先按【等效激励 b×t】缩短（如 0.05 rad/s × 13s ✓，等价于 0.01×65s ✓）
+     并在测例里写明等价关系 ✓ —— 但注意：本诊断关心的正是【长时长下的稳态】✗
+     ⇒ 缩短会改变结论 ✗ ⇒ 故应【保持 65s】并接受 38 分钟 ✓（用户已确认可接受 ✓）
+```
