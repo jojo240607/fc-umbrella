@@ -63,3 +63,31 @@ h(x) = R(q)·mag_I + mag_B        （机体三轴磁量测 ✓）
 2. **`mag_I` 初值**：须由静止时的磁量测 + 姿态估计给出 ✓（否则收敛慢 ✓）
 3. **静止时的不可观测**：P 可能塌陷到错误的分离 ✓ ⇒ 需"不可观测时不修正"的判据
    （参照：`heading_observable` 为假时**清零航向相关协方差** ✓ 见 §14.11 发现②✓）
+
+## 9. ★参照对照：`derivation.py` 的 mag 融合实现（2026-09-21 取到 ✓）
+
+```python
+416: def predict_mag_body(state) -> sf.V3:
+420:     mag_body = state["quat_nominal"].inverse() * mag_field_earth + mag_bias_body
+
+423: def compute_mag_innov_innov_var_and_hx(state, P, meas, R, epsilon):
+434:     innov = meas_pred - meas                      # 新息 = 预测 − 量测
+435:     Hx = jacobian_chain_rule(meas_pred[0], state) # ★H 逐【分量】⇒ 1×N 行
+437:     innov_var[0] = (Hx * P * Hx.T + R)[0,0]       # ★逐分量 S
+447:     return (innov, innov_var, Hx.T)
+```
+
+| 项 | 参照 | 本实现 | 判断 |
+|---|---|---|---|
+模型 | `q⁻¹·mag_I + mag_B` ✓ | `Rᵀ·mag_I + mag_B` ✓ | **一致** ✓ |
+新息符号 | `pred − meas` | `meas − pred` | **镜像但各自自洽** ✓（C1 位置路径已经方向检查验证 ✓）|
+**H 结构** | **逐分量 1×N** ⇒ **顺序标量融合** ★ | 3×3 联合更新 | 皆合法，但在**非线性**下**不等价** ✗✓ |
+
+**⇒ 关键差异（值得照参照改 ✓）**：顺序标量融合**逐项更新** ⇒
+第 2、3 分量使用的是**已被第 1 分量更新过的状态与 P** ✓✓；
+而联合更新三项共用同一组 `(x, P)` ✓。
+⇒ 在 H 依赖状态（本处 H 依赖 `q` 与 `mag_I` ✓）时二者**不同** ✗
+⇒ 这可能是"**残差收敛却停在错值**"的根源 ✓✓（顺序更新能逐步"解耦"该歧义 ✓）
+
+**⇒ 下一步**：把 `update_mag` 照参照改为**逐分量顺序标量融合** ✓
+（本项目的 `update_scalar` 已具备该能力 ✓ —— 只需按分量循环调用 ✓✓）
