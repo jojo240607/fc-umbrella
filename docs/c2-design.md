@@ -123,3 +123,32 @@ H 结构 | 逐分量 1×N | 逐分量 ✓ | 一致 ✓ |
    —— 其 `mag_B` 初值并非恒取 0 ✗，且 `mag_I` 初值与其**协方差初值**要配套 ✓
 2. **heading 可观测性处理**：`heading_observable` 为假 ⇒ 清零航向相关协方差 ✓（§14.11 发现②✓）
    —— 本测例的转动是否构成"可观测"需按参照判据核 ✓
+
+## 11. C2 剩余项的【精确定位方法】（2026-09-21 收口记录）
+
+### 已排除的位置（取到文件但无 mag 重置/健康度逻辑 ✗）
+| 文件 | 行数 | 结果 |
+|---|---|---|
+`magnetometer_control.cpp` | — | **404（不存在）** ✗ |
+`EKF/control.cpp` | 206 | mag 重置/健康度 **无** ✗ |
+`EKF/ekf_helper.cpp` | 1367 | 同上 ✗ |
+`EKF/yaw_fusion.cpp` | 14B（早先）| 抓取失败 ✗ |
+
+### ⇒ 下一步的【系统性定位法】（不再逐个试 ✗）
+```bash
+# ① 列 EKF 全目录（含子目录 ✓ —— API 端点已验证可用 ✓）
+curl -sSL "https://api.github.com/repos/PX4/PX4-Autopilot/contents/src/modules/ekf2/EKF?ref=main"
+# ② 对可疑子目录再列（如 mag/ yaw/ 或 python/ ✓）
+# ③ 用 GitHub code search（需认证 ✗）或逐个取 + grep 'resetMag|mag_health|heading_observable'
+```
+**目标符号**（用 grep 找它们的定义处 ✓）：
+- `resetMagEarthCov` ✓ / `resetMagBiasCov` ✓（**调用点**即触发条件 ✓）
+- `heading_observable` ✓（其**赋值处**即正式判据 ✓）
+- `mag_health` / `_control_status.flags.mag` ✓（健康度体系 ✓）
+
+### 本会话已确认的参照事实（可直接用 ✓）
+- 量测模型 `h = Rᵀ·mag_I + mag_B` ✓（derivation.py 416–421 ✓）
+- 量测融合为**逐分量顺序标量** ✓（derivation.py 435–437 ✓）
+- 参数：`ekf2_mag_noise = 5e-2` Gauss ✓ / `ekf2_mag_e_noise = 1e-3` ✓ / `ekf2_mag_b_noise = 1e-4` ✓
+- **过程噪声条件添加**（仅当 `P_ii < sq(mag_noise)` ✓，cov.cpp 180–200 ✓）
+- `resetMagEarthCov` 把 mag_I 方差设为 `sq(mag_noise)` ✓（cov.cpp 375–377 ✓）
