@@ -1298,3 +1298,31 @@ if (!_control_status.flags.heading_observable) {
 
 **待补（T2 剩余 ✓）**：`sym::PredictCovariance` 的符号定义源文件（生成器输入 ✓）；
 门控的实际调用点（`fuse*` 帮助函数 ✓）；`mag_B` 的融合方式 ✓。
+
+### §14.12 T2 定位成功：F 矩阵的符号生成器**路径已确定** ✓（抓取因网络超时未完成 ✗）
+
+**已定位**（GitHub API 列目录 ✓，两次调用）：
+```
+src/modules/ekf2/EKF/python/ekf_derivation/
+    derivation.py      ★ F 矩阵/协方差预测的【符号推导脚本】
+    generated/         （生成产物 ✓）
+    utils/
+```
+⇒ 即 `sym::PredictCovariance` **由 `derivation.py` 符号生成** ✓✓（对应 §14.11 的发现① ✓）
+
+**未完成**：`derivation.py` 抓取**超时**（curl exit=124 ✗ —— 网络间歇性 ✓；
+本轮前几次抓取成功 ✓）。**已带可见诊断 ✓**（未静默吞错误 ✗，见 §14.10 的教训 ✓）。
+
+**恢复后的取法（任选 ✓）**
+```bash
+curl -sSL -w "http=%{http_code} size=%{size_download}\n" \
+  -o derivation.py https://raw.githubusercontent.com/PX4/PX4-Autopilot/main/src/modules/ekf2/EKF/python/ekf_derivation/derivation.py
+# 备选（更稳，可取整目录）：稀疏克隆
+git clone --filter=blob:none --sparse https://github.com/PX4/PX4-Autopilot
+cd PX4-Autopilot && git sparse-checkout set src/modules/ekf2/EKF
+# 备选：GitHub API contents?ref=main 逐层取（§14.12 定位用的就是它 ✓）
+```
+
+**拿到后的用法（C1 ✓）**：`derivation.py` 定义了 F 的**符号形式** ⇒
+① 可直接对照 §14.3 的误差状态动力学 ✓（逐项核对符号 ✓，消除本会话高发的手推错误 ✗）
+② 亦可作为"用 Python/sympy 重新生成一份"的**参照实现** ✓（本项目可用同样思路生成 ✓）
