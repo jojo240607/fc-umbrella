@@ -823,8 +823,22 @@ x_env_{faults,rc,noise_perturb}.rs:3 "⚠️ 时钟前提已更正：场景 = �
   （"时间推进一律走 McuClock/run_ms，不得用 run(字节预算)" ✓）属同一类问题 ✓
 ```
 
+**★★归因更正（同日，stash 验证 ✓）** ✗✓
+```
+x_flyctrl_modes / x_flyctrl_app / x_hil_mcusim 的 **EnvHarness 引用数 = 0** ✗
+  ⇒ 它们【不使用 EnvHarness】⇒ 与 `STEP_DT_MS` 无关 ✓
+★`git stash` 掉改动后重跑 x_flyctrl_modes：**仍然 FAILED（0/1）** ✓✗
+  ⇒ **它们是【既有失败】** ✗✓ —— §5.12 把它们归因于步长改动是**错的** ✗
+✓ 真正受步长影响的：使用 harness 的测例 ⇒ 目前确认 **x_env_rc** ✓
+   （其 `run_steps(400)` = 按步数等待 ✗ ⇒ 4ms 下 1.6s vs 旧 5.2s ✗ ⇒ 同类问题 ✓）
+※ 另注：`git stash pop` 报 "No stash entries found" 属正常 ✓（改动已提交 ⇒ 无事可存 ✓）；
+  已核对：`STEP_DT_MS = 4.0` ✓、工作区干净 ✓、编译通过 ✓ ⇒ **无损失** ✓
+```
+
 **⇒ 结论** ✓✓
 1. **改动本身正确** ✓（步长必须与固件实测拍率一致 ✓）
+1b. ★且有【三类】结果需分开对待 ✓：①既有失败（不用 harness ✗，与本改动无关 ✓）
+    ②按步数等待（用 harness ✗，需改毫秒 ✓）③新前提下的阈值（需复核 ✓）
 2. 需要的是【把"步数"改成"毫秒/秒"】✗ ⇒ 机械但面广 ✓（凡 `for _ in 0..N` / `run_steps(N)` 的等待/超时 ✓）
 3. ⚠️ 且 4ms 下墙钟 ×3.25 ✗（如 gyro_bias 测例 65s ⇒ 16250 步 ≈ 38 分钟 ✗）
    ⇒ 长测例需按【等效激励 b×t】缩减并写明 ✓，或接受更长运行 ✓
