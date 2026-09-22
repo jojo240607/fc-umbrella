@@ -384,3 +384,27 @@ A8 湍流 20°/3Hz | 1.725 | **1.674** | −0.052 ✓ **改善** |
 （与"先核对约定/工装"同一条纪律 ✓，本会话已多次应验 ✓）。
 
 **回退路径** ✓：`AnyEstimator::legacy()`（一行 ✓）；Legacy 实现与全部测试保留 ✓。
+
+### §5 M 场（mcu_simulater）验证（2026-09-21）—— **ESKF 在真实固件上通过** ✓✓
+
+**前提** ✓：`app.bin` 已按 `build_app.py` 重新构建 ✓，其**默认估计器已是 ESKF** ✓
+⇒ **M 场测试现在验证的就是 ESKF**（在模拟 MCU 上跑真实固件 ✓）。
+
+**结果** ✓
+```
+mcu_simulater: 241 passed / 1 failed
+  唯一失败 = peripheral::spi::tests::sr_rc_w0_clears_ovr_but_not_txe ✗
+           （**既有缺陷** ✓，早在 §14.1 登记；与本次改动无关 ✓）
+```
+
+**M 场对【估计】的实际覆盖** ✓（均在 ESKF 固件下通过 ✓✓）
+| 测例 | 断言 |
+|---|---|
+`x_env_motion.rs:116` | roll 估计应显著响应摆动（max > 0.06 rad ✓）|
+`x_env_motion.rs:117/187` | roll 估计应不发散 ✓ |
+`x_env_noise_perturb.rs:83` | ★**陀螺零偏应被 bias 状态学习**（tilt < 0.35 rad ≈ 20° ✓）|
+`x_hil_mcusim.rs:275-276` | roll/pitch 有限且有界 ✓ |
+
+**★意义** ✓✓：`x_env_noise_perturb` 的**零偏学习**断言现在由 **ESKF 的 `bg` 状态**满足 ✓✓ ——
+这正是 Stage 6 登记的 Legacy 缺口（"**EKF 不估计陀螺零偏**（`x[6..8]` 从不被观测更新 ✗）"）
+⇒ **结构性关闭** ✓✓（C1/ESKF 有 `I_BG` 状态 ✓）。
