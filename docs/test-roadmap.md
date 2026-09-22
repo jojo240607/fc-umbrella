@@ -1123,3 +1123,32 @@ GPS 位置/速度 | `[0 0 I]` / `[0 I 0]` | NIS 卡方门 ✓ |
    · `F` 的解析对照（小角度极限 vs 数值微分 ✓）
    · 静止/匀速/自由落体三个极限情形的行为对照 ✓（现架构的已知答案已有 ✓）
    · 与现架构的 A/B：姿态/位置/速度的**行为量**逐项对比 ✓
+
+### §14.7 ✅ 参照核对结果（2026-09-21，PX4 真实源码）
+
+方法：**只取关键源文件**（`curl` raw ✓，两次 HTTP ✓）而非克隆整仓 ✗——
+`src/modules/ekf2/EKF/common.h`。取到的门控参数（原文注释）：
+
+| 参数 | 值 | 原文（节选） |
+|---|---|---|
+`ekf2_gps_p_gate` | 5.0f | GPS horizontal position **innovation consistency gate** size (STD) |
+`ekf2_gps_v_gate` | 5.0f | GPS velocity innovation consistency gate size (STD) |
+`ekf2_baro_gate` | 5.0f | barometric and GPS height innovation consistency gate size (STD) |
+`ekf2_mag_gate` | **3.0f** | magnetometer fusion innovation consistency gate size (STD) |
+`ekf2_hdg_gate` | **2.6f** | heading fusion innovation consistency gate size (STD) |
+`ekf2_tas_gate` / `ekf2_beta_gate` / `ekf2_rng_gate` | 5.0f | innovation consistency gate (STD) |
+`ekf2_evv_gate` / `ekf2_evp_gate` / `ekf2_of_gate` / `auxvel_gate` | 3.0/5.0/3.0/5.0 | 同上 |
+
+**⇒ 三条已被证实（写进规格 ✓）**
+1. **PX4 的门控是【新息一致性门】，单位【标准差 STD】****✓✓** —— 每个量测一个门 ✓。
+   与本项目 §14 的设计一致 ✓；而本项目现用**固定阈值** ✗
+   ⇒ 这【正是 §9.7/§9.10 两次门控失败的结构原因】✓✓：
+     没有状态预测 ⇒ 无法把残差归一化 ⇒ 只能对原始量（加速度大小）设阈值 ✗。
+2. **参考数值可直接复用** ✓：mag **3.0σ** / hdg **2.6σ** / baro·gps **5.0σ** ✓
+3. **量测清单里【没有"加速度计当重力参考"】** ✗✓（另有 TAS / sideslip / range / flow / vision ✓）
+   ⇒ 与 §14 的"比力是动力学输入"断言一致 ✓✓
+
+**待补核对（下一步 ✓）**：状态向量的**确切维度与误差状态定义**（PX4 在 `EKF/state.h` 或
+`ekf.cpp` 的 `State` 结构 ✓）、`F` 矩阵的具体形式、以及 **PX4 是否融合加计零偏** ✗。
+（本次 `state.h` 抓取只得到 14 字节 ⇒ 路径已变，需改用 GitHub API 列目录或
+`git ls-remote`/稀疏检出定位 ✓）
