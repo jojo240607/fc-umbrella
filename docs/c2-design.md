@@ -252,3 +252,33 @@ V1 | **代数反解自检**：给定独立 mag_I 先验 + 真值姿态 ⇒ `mag_
 V2 | `reset_mag_states(mag, reset_heading)` 的重置 | 重置后：mag_I/mag_B/P 均按参照设定 ✓ |
 V3 | `yaw_align` 前后：mag_B 反解是否启用 | 对齐前不反解、对齐后反解 ✓ |
 V4 | 端到端：有了先验 + 反解 ⇒ mag_B 一次到位 | \|Δmag_B\| < 1e-4 ✓（而非 0.196 ✓）|
+
+### §12.1 `yaw_align` 的语义（对齐清单第 5 项 ✓，参照原文）
+
+```cpp
+// mag_control.cpp
+ 83:  _control_status.flags.yaw_align = false;            // 失效 ⇒ 解除闩锁
+301:  if (!yaw_align ...) {
+309:      bool reset_heading = !yaw_align;                // ★首次对齐 ⇒ 重置航向
+315:      _control_status.flags.yaw_align = true;         // ★闩锁置位
+344:  if (yaw_align && (mag_3D || mag_hdg)) { ... } else yaw_align = false;   // 复核/解除
+424:  if (!reset_heading && yaw_align) { mag_B = mag − R·WMM; }   // ★★门控代数反解
+```
+
+**三条语义**
+| # | 语义 |
+|---|---|
+① | **闩锁**：初值 false ⇒ 磁首次可信时置 true，且那一刻 **`reset_heading = true`** ⇒ **由磁重置航向** ✓ |
+② | 之后保持 true（失效路径如 83/344/348 行 ⇒ 置 false ✓）|
+③ | ★**门控 `mag_B` 的代数反解**（424 行 ✓）⇒ "**航向未对齐 ⇒ 不做反解**" ✓✓（合理：航向错则反解也错 ✓）|
+
+**⇒ 对本实现的含义** ✓
+- 我的"**每步去相关航向**"代理 ✗ ⇒ 应换成 **"首次对齐时由磁重置航向 + 之后门控反解"** ✓✓
+- 依赖链因此明确：**先实现 `yaw_align` 闩锁与其"首次对齐"事件** ⇒ 再实现重置与反解 ✓
+
+**实现计划（V2/V3 的测试同步 ✓）**
+| 步 | 内容 | 验证 |
+|---|---|---|
+5a | `C1Filter` 增 `yaw_aligned: bool`（初值 false ✓）| V3：对齐前不反解 ✓ |
+5b | **首次对齐事件**：磁首次可信 ⇒ `reset_heading = true` ⇒ 由磁重置航向 ✓ | 重置后 yaw 与磁一致 ✓ |
+5c | 之后 `yaw_aligned = true` ⇒ **门控 `mag_B` 反解** ✓ | V4：反解一次到位 ✓ |
