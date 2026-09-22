@@ -348,3 +348,33 @@ A8 湍流 20°/3Hz | 1.725 | **1.674** | −0.052 ✓ **改善** |
 ★教训：「扫描某旋钮有影响」≠「该旋钮是主因」✗ ——
   判主因必须用【关掉某机制能否救回】的对照臂 ✓（本会话既有手法 ✓，此处漏用 ✗）
 ```
+
+## 4. ★★★步 3 完成：产品默认已切换为 ESKF（2026-09-21）
+
+**依据** ✓（全表验收，`docs/c1-migration-plan.md` §3.9 / 提交 8402889 ✓）：
+| | Legacy | **ESKF** | |
+|---|---|---|---|
+劣于 Legacy 的场景数 | — | — | **0 / 10** ✓✓ |
+最佳改善 | — | A5 95.967 → **1.341** | **72×** ✓ |
+安静场景 | — | **全部不劣化**（A1/A2/A8 反而改善 ✓） | ✓ |
+
+**改动** ✓（`flyctrl/app/src/flyctrl/control.rs`）
+```rust
+- use flyctrl_core::estimator::EkfEstimator;
++ use flyctrl_core::estimator::select::AnyEstimator;   // ★默认 ESKF ✓
+-         EkfEstimator::default_quad(),
++         AnyEstimator::default_product(),  // Legacy 仍可经 AnyEstimator::legacy() 回退 ✓
+```
+类型安全依据 ✓：`HilContext<E: Estimator, C>` 已是泛型 ✓；`AnyEstimator` 实现同一 trait ✓
+（9 方法逐一委托 ✓，漏一个即编译不过 ✓）。
+
+**⚠️ 诚实登记（未在本机验证编译 ✗）** ✓
+```
+cargo check --manifest-path app/Cargo.toml
+  ⇒ error: unwinding panics are not supported without std（rtos-app-sdk ✗）
+  ⇒ 这是【环境/工具链】限制（需 RTOS 目标 + panic=abort ✓），**与本次改动无关** ✓
+⇒ 本条为"未验证改动" ✗ ⇒ 必须在实机 CI / 目标工具链上构建通过后方可发布 ✓
+  （改动本身极小且类型安全 ✓，但按纪律不得视为已验证 ✓）
+```
+
+**回退路径** ✓：`AnyEstimator::legacy()`（一行 ✓）；Legacy 实现与全部测试保留 ✓。
