@@ -618,3 +618,40 @@ max tilt    = 3.1413 rad = 【179.99°】✗✗
    · H 场也翻 ⇒ 是 **ESKF 算法**问题 ✓ ⇒ 在 H 场快速迭代定位 ✓（正确的工作面 ✓）
    · H 场不翻 ⇒ 才是 **固件路径**差异 ✓ ⇒ 再逐项查（步率 / 观测量 / 数值 ✓）
 ```
+
+### §5.7 ★更正 §5.6（2026-09-21，用户指出 ✓）—— H 场**确已用 ESKF 重测**；真差异是**零偏量级 50×**
+
+**用户指出** ✓："h 场明明换了新的估计器重新测试了啊" ✓ ⇒ 仔细核对后**用户正确** ✓，§5.6 表述失准 ✗。
+
+**H 场的 ESKF 测例清单** ✓（核对 `att_est.rs` ✓）
+```
+① t1_ab_harness_and_mode_switch          3 场景双跑 ✓
+② dual_run_ab_table_legacy_vs_eskf       A1–A10+A13 × 两档 ✓
+③ a4_a7_axis_split_both_modes            分轴 ✓
+④ eskf_rotation_failures_contrast_arms   对照臂 ✓
+⑤ reanchor_quiet_scenario_regression     安静回归 ✓
+⑥ ★eskf_final_tuning_full_table          全表 A1–A13 ✓
+⑦ mag_state_history_in_rotation_cases    磁链历程 ✓
+⇒ **H 场用 ESKF 跑过 A1–A13 全表** ✓ —— §5.6 的"估计器不同"✗ 表述失准 ✓
+```
+
+**★真正的不对齐点（核对所得 ✓✓）**
+```
+realistic() 的陀螺零偏 = 【0.001 rad/s】（src/sensor.rs:123 ✓）
+M 场该测例的零偏     = 【0.05 rad/s】✗ ⇒ **相差 50×** ✗✗
+⇒ H 场的 ESKF 测例【全都】跑在 realistic()（0.001 ✓）或清零配置上 ✓
+⇒ **H 场从未用大零偏压过 ESKF 的零偏学习能力** ✗✓
+⇒ 且 H 场唯一"隔离的零偏测例"（drift_rejection，0.01 rad/s ✓）跑的是 **Legacy** ✗
+   （用 `att_alpha` 旋钮 ✓ —— Legacy 专有 ✓）
+★结论：差异不是"估计器不同"✗，而是
+   **【H 场缺"ESKF + 大零偏 + 长时长"的测例】** ✓✓ —— 即 H 场的**覆盖盲区** ✓
+```
+
+**⇒ 行动（一分为二，落点精确 ✓）**
+```
+★在 H 场加测例：**同一个 ESKF** + **与 M 场完全相同的输入**：
+    陀螺零偏 0.05 rad/s ✓ · 静态悬停 65 s ✓ · 250 Hz ✓ · 磁干净 ✓
+  · 若也翻 ⇒ ESKF 算法在大零偏下失效 ✓ ⇒ 在 H 场快速迭代定位 ✓
+  · 若不翻 ⇒ 固件路径差异 ✓（步率 250 vs 74.9 Hz ✗ / 观测量 / 数值 ✓）
+★同时补上 H 场的覆盖盲区（大零偏 ✗）✓ —— 与 M 场暴露的问题同源 ✓
+```
