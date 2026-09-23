@@ -3043,3 +3043,24 @@ ESKF step 进入 : 0.730 ✓
 到目标 | **0.19ms（4.8%）** ✓ |
 `flyctrl-core` / `fly-sim-core` | **117/0** ✓ / **176/0** ✓ |
 M 场 | 仅锁相守卫超 1ms ✗（**行为类失败已消失** ✓✓）|
+
+### §5.87 逐句下钻的精确做法：外层必须写 `CTRL_PHASE`（2026-09-23）
+
+**关键机制** ✓（此前已发现，此处固化 ✓）
+```
+profiler 的 key = `if ctrl_phase == 1 { 10 + min(hil_phase, 25) } else { ctrl_phase }` ✓
+⇒ **在 `step_hil` 之外**（`ctrl_phase != 1`）⇒ key 直接取 `ctrl_phase` ✗
+⇒ ★用 `perf::probe` 写的内容**不改变 key ⇒ 惰性** ✗
+⇒ **要给控制任务外层加密探针，必须写 `CTRL_PHASE`（值 5..12 ✓）**
+```
+
+**插入点（对应那 ≈0.7ms ✓）**：`control.rs` 内由现有 0..4 加密为
+```
+5 循环顶 · 6 dt 计算完/`sync_gains_to_pid` 前 · 7 读帧前（seqlock ✓）
+8 读帧后 · 9 设定点构造后（进 `step_hil` 前 ✓）·（10 已是 step_hil ✓）
+11 `step_hil` 后 · 12 健康闸/限幅后 ✓
+★并在 profiler 的 `OUTER` 表补 5..12 的名称 ✓
+```
+
+**预期** ✓：内层 2.55 ✓ + 外层 0.94 ✗ = 3.49 ✗ vs 整拍 4.19 ✗ ⇒ 那 ≈0.7ms 归到 5..12 某段 ⇒
+指名到语句 ⇒ 修 ⇒ **稳过 4ms** ✓✓
