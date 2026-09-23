@@ -3123,3 +3123,35 @@ C（混合 ✓）：保留 1ms tick，但用 **µs 绝对截止时刻**（相位
   ⇒ 均值精确 ✓，抖动仍 ±1ms ✗（控制上可接受 ✓）
 ★建议 ✓：**先 A**（几乎免费、立刻达标 ✓），**随后 B**（去掉"工作量 vs 周期"的耦合 ✓✓）
 ```
+
+### §5.90 ★★★★B 案原料清单：RTOS/SDK 已有"精确周期"所需三件（2026-09-23）
+
+**SDK 现有定时原语（`joc-rtos-app-sdk/sdk/src/` ✓）**
+```rust
+// rtos.rs ✓
+146 msleep(ms) · 154 tick_count() · ★164 **cycle_now() -> u32**（自由运行周期计数 ⇒ µs 级时基 ✓✓）
+179 delay_until(last, inc_ticks)（现用，1ms 粒度 ✗）· 46/63 **Semaphore::wait()/give()** ✓
+// ioctl.rs ✓（Timer 驱动）
+94-100 TIMER_IOCTL_{SET_REPETITION, GET_COUNTER, GET_OVERFLOWS, ENABLE, DISABLE} ✓
+```
+
+**⇒ 对齐 PX4 `hrt_call_every` 的等价实现** ✓✓
+```
+① 打开 Timer 设备 ⇒ SET_REPETITION(周期计数值) + ENABLE ✓ ⇒ **µs 级周期** ✓（不受 1ms tick 限制 ✓）
+② Timer ISR（或 cycle_now() 比较）⇒ Semaphore::give() ✓
+③ 控制任务改为 Semaphore::wait() **阻塞等下次到期** ✓ ⇒ 精确唤醒 + 空闲不忙等 ✓✓
+④ 保留 delay_until 作回退 ✓
+```
+
+**⇒ 两块收益** ✓✓
+```
+① ★周期精确：工作 <4ms 即恒为 4ms ⇒ **250Hz** ✓✓（去掉工作量与周期的耦合 ✓）
+② ★不忙等：现 delay_until 占 0.966ms 的退休字节（自旋 ✗）⇒ 换阻塞后 **白赚 ~1ms** ✓
+```
+
+**⇒ 实施顺序** ✓
+```
+① 查 Timer 驱动在 M 场（`mcu_simulater`）是否有设备模型 ✗；无则先机制层实现 + 补模型 ✓
+② `control.rs` 加"定时器 + 信号量阻塞"新循环 ✓（保留旧路径 ✓）
+③ **H 场先验**（行为不变 ✓）⇒ **M 场回归**（预期 4.00ms / 250Hz ✓✓）
+```
