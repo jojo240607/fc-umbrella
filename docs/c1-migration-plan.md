@@ -3972,3 +3972,35 @@ test result: ok ✓
 `syst_overflows` / `syst_cycles_in` / `syst_pending_sets` / `syst_load_stats`（RVR 写入数+极值 ✓）
 Machine: `scb_cycles_in()` / `syst_diag_counts()` / `syst_load_stats()` ✓
 ```
+
+### §5.114 ★★★★★全批验证：失败 ~40 → **9**，自愈 78%（2026-09-24）
+
+**结果（`cargo test --release --tests --no-fail-fast` ✓）**
+```
+52 个 test result ✓；失败从 ~40 项降到 **9 项** ✓✓ ⇒ **自愈 78%** ✓
+★`x_env_smoke`（`hover_converges_stable` + `est_layout_probe`）**已通过** ✓✓
+  —— 即悬停行为回归恢复 ✓（此前因固件 ms 口径失真而锁相失败 ✗）
+```
+
+**剩余 9 项与归类 ✓**
+```
+【A 类 · 既有 gap ✓】① `peripheral::spi::tests::sr_rc_w0_clears_ovr_but_not_txe` ✗
+【B 类 · 板级改动正当后果 ✓（须按新配置重写期望 ✓）】
+   ② `m6_tim9_14_mounted_and_tick` ✗（TIM9 已 20Hz→500Hz ✓）
+【C 类 · 待逐个三角定位 ✗】
+   ③④ `x_bus_trace`：`i2c_nack_traced` / `i2c_transaction_traced_end_to_end` ✗
+   ⑤   `x_drvtest`：`drvtest_all_drivers_pass` ✗
+   ⑥⑦⑧ `x_env_faults`：`baro_step_bounded_by_gps` / `gps_drop_degraded_then_recover` /
+        `imu_saturate_critical` ✗（该族 8 项 ⇒ **已自愈 5** ✓）
+   ⑨   `x_env_longrun`：`long_cruise_converges_and_bounded` ✗（同族 `long_hover` 已过 ✓）
+```
+
+**⇒ 处置（守纪律 ✓，不放松阈值 ✓）**
+```
+① 逐个取 panic 的**具体断言与数值** ✓（不是"失败"三个字 ⇒ 要看到 left/right ✓）
+② 先做 **B 类**（最确定 ✓）：按 TIM9 500Hz 更新该测试期望 ✓
+③ 再看 `x_env_faults` 三项（同族 ⇒ 可能同一根因 ✓：故障注入的**绝对时长**标定 ✓）
+④ `x_bus_trace` / `drvtest` 各自定位 ✓
+★若某项确因【旧时基标定】✗ ⇒ 按**新时基**重写其期望值 ✓（这是"按新事实更新"✓，非放松 ✓）
+★若有真实行为退化 ✗ ⇒ 记为该退化的账 ✓（绝不靠调阈值掩盖 ✓）
+```
