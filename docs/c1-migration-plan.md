@@ -2660,3 +2660,36 @@ GPS 路径 = `update_gps_pos`（→ `update_vec3`，N³ 已除 ✓）
 ② 再判"最大项"⇒ 定向优化（含合并 `gain_apply` 与 `update_vec3` 的重复 ✓）
 ③ 目标 4ms ⇒ **M 场回归** ✓
 ```
+
+### §5.73 ★★★★探针法恢复 + 交叉验证通过 ⇒ 答案：`update_gps_pos` = 6.78ms（2026-09-23）
+
+**解开的限制** ✓：`key = 10 + min(hil_phase, 11)` 的**钳位** ✗ ⇒ 只能区分 probe 8..11 ✗
+⇒ 放开为 `min(hil_phase, 25)` ✓（配合 `N=64` ✓）⇒ **ESKF 各段全部可分辨** ✓✓
+
+**结果** ✓✓
+```
+ESKF step 进入   : 1.043 ms
+ESKF predict 完  : 1.272 ms
+ESKF 重力完       : 0.000
+ESKF GPS位前      : **6.783 ms** ✗✗   ← 答案
+ESKF GPS位后/速后/空速后/state前 · hil 气压前/后 · 磁前 : 全 0 ✓
+内层合计 9.098 ms ✓
+```
+
+**★标签语义（重要 ✓）**：该工具按【key 当前期间】累计 ⇒ 标签 "X 前" = **probe X 之后的代码** ✓
+```
+"predict 完" = probe9 之后 = `update_gravity` ⇒ 1.272 ms ✓
+"GPS位前"    = probe11 之后 = **`update_gps_pos`** ⇒ **6.783 ms** ✗
+"GPS位后"    = probe12 之后 = `update_gps_vel` ⇒ 0 ✓（本工装无速度观测 ✓）
+```
+
+**★★两法交叉验证（本轮最大收获 ✓✓）**
+```
+重力辅助：探针 **1.272 ms** ／ 消融 **1.360 ms** ⇒ **一致** ✓✓
+⇒ **该粒度下探针绝对值可信** ✓（hook 放大只对极小段显著 ✓）
+⇒ 故 `update_gps_pos` = **6.78 ms 真实** ✗ —— 而其 N³ **已除** ✗
+   ⇒ 该路径 = `gain_apply`(1.6k) + `update_vec3`(3k) ≈ 5k 乘加 ⇒ 应 ~0.6ms ✗
+   ⇒ **另有开销** ⇒ 须在其【内部再插一层探针】✓✓
+```
+
+**⇒ 下一步** ✓：在 `update_gps_pos` 内三处（构 H / `gain_apply` / `update_vec3`）插探针 ⇒ 指名 ⇒ 修 ⇒ 4ms ✓
