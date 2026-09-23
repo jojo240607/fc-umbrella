@@ -2328,3 +2328,29 @@ step_hil 气压后 : 0.037
 ⇒ 下一步：看钩子的注册方式与覆盖范围（`add_block_hook` / `add_mem_hook` 的区间 ✓）
    ⇒ 扩到 app 段 ⇒ 重测 ⇒ 控制任务账目即可闭合 ✓
 ```
+
+### §5.62 ★★★★★工具的**真实机制**（读源码所得 ✓）—— 我的 id/表与它不匹配 ✗✓
+
+**源码** ✓（`zz_ctlprof.rs:297-312` ✓）
+```rust
+let ctrl_phase = <读 CTRL_PHASE>;   // 外层探针变量
+let hil_phase  = <读 HIL_PROBE>;    // 内层探针变量（= perf::probe 所写 ✓）
+let key = if ctrl_phase == 1 { (10 + hil_phase.min(11)) as usize } else { ctrl_phase as usize };
+```
+
+**⇒ 三项关键事实** ✓✓
+```
+① 有【两个】探针变量：`CTRL_PHASE`（外层 ✓）与 `HIL_PROBE`（内层 = `perf::probe` ✓）
+② ★内层 key = `10 + min(hil_phase, 11)` ⇒ **钳到 ≤21** ✓
+   ⇒ 我用的 30..34 / 40..46 **永不可现** ✗✓（根因不是 N=22 ✗，而是这个钳位 ✓）
+③ ★表的 id 必须是【key = 10 + probe_id】✗
+   ⇒ 我在 INNER 里写 8..18 **是错的** ✓ —— `perf::probe(8)` 的真实 key 是 **18** ✓✓
+```
+
+**⇒ 正确用法（两类探针分开 ✓）**
+```
+· `step_hil` 内部的探针（`perf::probe` ✓）⇒ key = 10 + id ⇒ 表写 **18..25**（对应 probe 8..15 ✓）
+· 控制任务**外层**的探针 ⇒ 必须写 `CTRL_PHASE`（值 2..9 ✓），**不能用** `perf::probe` ✗
+  （外层 key 直接取 `ctrl_phase` ✓；`ctrl_phase == 1` 是 step_hil 的标志 ✓）
+⇒ 这解释了本轮此前所有"读数异常" ✗（不是固件 ✗，是**探针语义用错** ✓）
+```
