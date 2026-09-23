@@ -3237,3 +3237,45 @@ A（可选便利 ✓）：把 rtos_timer_* 补进 ABI（**追加结构体末尾*
    ★ISR 上下文：ISR 首尾 cycle_now() 差 ⇒ 补 profiler 盲区 ✓✓
 ② 判决：工作 ≤4ms ⇒ 上 B 案（必达 250Hz ✓✓）；工作 >4ms ⇒ 先减工作量（定时器无用 ✗）
 ```
+
+### §5.93 ★★★★B 案实施计划（硬件定时器 + ISR + 信号量，前置事实全部核实 ✓）（2026-09-23）
+
+**已核实的前置事实**
+```
+① timer 驱动是 **event_device**（周期性事件源，"exactly like SysTick" ✓），ioctl:
+   GET_OVERFLOWS / GET_COUNTER / **SET_REPETITION(RCR)** / ENABLE / DISABLE ✓
+   周期由 **config 的 tick_hz** 决定（open 时按 timer_clk_hz 算 PSC/ARR ✓）
+   ⇒ **运行时 SET_REPETITION 只能【分频】**（RCR）✗ ⇒ ★必须改【板级 tick_hz】✓
+② 板上 13 个 timer 全是 **20 Hz** 且 **14 个 TIM 全被占用**（无空闲 ✓）
+   · 被 PWM 占用：TIM3(pwm0) TIM2(pwm1) TIM5(pwm2) TIM4(pwm3) TIM12(pwm4) ✓
+   · ★**timer3 = TIM7（basic，无 CC 通道 ✓、IRQ55 ✓）空闲** ✓：无 selftest 断言、app 未碰 ✓
+③ IRQ 框架：`irq.c:15` —「a line fires ⇒ irq_dispatch() invokes **EVERY** handler」✓
+   ⇒ ★app 的 ISR 可与**驱动自身 ISR 共存** ✓（驱动负责清 UIF ✓）
+   · app 侧注册：`irq_attach(app_irq_reg_t{ irq_id, prio_class, rt_class, isr_cb, ctx })` ✓
+   · ★**已有先例** ✓：`flyctrl/app/src/intg_test.rs` Test I（TIM5 → `sem_give` ✓）
+④ M 场模型完整 ✓✓：`mcu_simulater/src/peripheral/timer.rs` 建模 UIF / DIER.UIE / RCR，
+   且「DIER.UIE 使能时向**共享 NVIC** 置挂起更新中断」✓ ⇒ ISR 路径在 M 场真实执行 ✓
+⑤ M 场内核同源 ✓：`artifact.rs` 载 `joc-base/build_hil/stm32f407_minimal.elf` ✓
+   ⇒ 板级改动**须重编内核**（H/M 两场同源 ✓）
+```
+
+**实施步骤**
+```
+① joc-base（板级，1 行）：`g_timer3`（TIM7）`tick_hz: 20 → **250**` ✓
+   ⇒ 周期 = 1/250 s = **4.000 ms** ✓（分辨率 = 84MHz 定时器时钟 ✓ 非 1ms tick ✓✓）
+② flyctrl（app）：新增 `timer_pace` ✓
+   · static `rtos_sem_t` + `unsafe extern "C" fn pace_isr(ctx)` ⇒ `g_app_slot.sem_give` ✓（ISR 安全 ✓）
+   · init：dev_get("timer3") → dev_open → irq_attach_and_enable(IRQ55, pace_isr, &SEM)
+           → dev_ioctl(TIMER_IOCTL_ENABLE) ✓（先挂 handler 再使能 ✓，防空窗 ✓）
+   · 控制任务循环：`sem_wait()` 取代 `delay_until` ✓；**初始化失败则回退 delay_until** ✓（反静默降级 ✓）
+③ 校验顺序（守纪律 ✓）：H 场（flyctrl-core/fly-sim-core ✓）⇒ M 场（x_env_* ✓）
+   预期：控制拍 **恰好 4.000ms / 250Hz** ✓✓，且锁相守卫漂移 ≈0 ✓
+```
+
+**风险与对策**
+```
+· dt 语义：控制/EKF 用的 dt 若为常量 4ms ✓ 则行为按名义值不变 ✓（须核实 control.rs 的 dt 来源 ✓）
+· 传感器任务 500Hz 仍走 tick ✗（本期不动 ✓）
+· ISR 优先级/类别：照抄 intg_test Test I 的取值 ✓（避免与既有中断冲突 ✓）
+· 首次使能竞态：attach ⇒ enable 顺序固定 ✓；`irq_manager` 先装 handler 后 arm ✓
+```
