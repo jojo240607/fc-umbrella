@@ -3304,3 +3304,41 @@ B 案（硬件定时器 250Hz 驱动）能保证：
    证据 ✓：profiler 的**任务侧**退休字节 = 3.46ms ✓（< 4ms ⇒ 有利 ✓）
          但 **ISR 上下文未计** ✗（sensors 500Hz ISR / tick ISR / 调度器 ✓）⇒ 未知量在此 ✓
 ```
+
+### §5.95 ★★★★★B 案落地 + 时基比修正（2026-09-23）
+
+**已落地（3 处）**
+```
+① joc-base 板级：`g_timer3`（TIM7, basic, IRQ55）`tick_hz: 20 → **250**` ✓
+② flyctrl 新模块 `app/src/flyctrl/pace.rs` ✓：static sem + `pace_isr`(只 sem_give ✓ ISR 安全)
+   → dev_get/dev_open("timer3") → `irq::attach_and_enable(55, …)` → `ioctl(TIMER_IOCTL_ENABLE)`
+   → 控制任务 `pace::wait_tick()`（阻塞 ✓ 不忙等 ✓）；**init 失败则回退 delay_until** ✓（反静默降级）
+   ★遵循本 session 铁律：**不依赖 static 初值**（raw bin ⇒ .data 不可靠 ✗），状态全在 init 里显式赋值 ✓
+③ 内核重建 `build_hil/jOS.elf` ✓（M 场同源 ✓）；app.bin 116368B ✓ 同步 /tmp/flyctrl_real.bin ✓
+```
+
+**首测（M 场）** ✓✗
+```
+[ctl] 场景 3000ms / 固件 3000ms | 控制拍 **794** | 周期 **3.778ms → 264.7Hz** ✗（标称 4.000/250）
+★拍率**从 239Hz 变为 264.7Hz** ⇒ 节拍源确实换成了硬件定时器 ✓（性质变了 ✓ 不是回退路径 ✓）
+```
+
+**⇒ 逐层归因（★两侧公式都对 ✓）**
+```
+驱动侧 `tim_hal_config`：total = 84e6/250 = 336000；presc = (336000-1)/65536 = 5；ARR = 336000/6 = 56000
+   ⇒ 周期 = (5+1)×56000 = **336000 clk = 精确 250Hz** ✓
+模型侧 `timer.rs::tick`：psc = PSC+1 = 6；period = ARR+1 = 56000 ⇒ 溢出间隔 **336000 模型周期** ✓
+⇒ ★**两侧都精确 250Hz** ✓✓ ⇒ 3.778ms 只能来自【**M 场的时基比**】✗：
+   · 测量用 `systick_ms()`（SysTick 整数 ms ✓）⇒ 取决于模型里 SysTick 相对虚拟 84MHz 时钟的比率
+   · 3.778 与 4.000 之差 = **+5.88%** ⇒ 若 SysTick 在模型里**偏慢 5.88%** ✗，则真实周期恰为 4.000ms ✓
+   · ★反推旧数据自洽 ✓：delay_until 时 `4097 fw-ms / 975 拍 = 4.202 fw-ms`
+     ⇒ 折真实时间 = 4.202/1.0588 = **3.969 ms** ✓ ⇒ ★**当时工作其实【已在 4ms 内】** ✓✓
+     ⇒ ★即 **"+0.19ms/拍" 很可能只是 SysTick 模型时基的假象** ✗（§5.94 的推断需修正 ✓）
+```
+
+**⇒ 判决性验证（下一步 ✓，用与 clock.rs 同款亚毫秒仪器 ✓）**
+```
+用【模型周期数 / 退休字节】而非 systick_ms 量周期（clock.rs 文档即用此法 ✓，量化 0.148ms ✓）
+   ⇒ 若得 **4.000ms ± 量化** ⇒ B 案成立 ✓✓（250Hz 达成 ✓），3.778 是仪器时基假象 ✗
+   ⇒ 若得 3.778ms ✓ ⇒ 是节拍源本身错 ✗（回到 timer 侧查）
+```
