@@ -3155,3 +3155,41 @@ C（混合 ✓）：保留 1ms tick，但用 **µs 绝对截止时刻**（相位
 ② `control.rs` 加"定时器 + 信号量阻塞"新循环 ✓（保留旧路径 ✓）
 ③ **H 场先验**（行为不变 ✓）⇒ **M 场回归**（预期 4.00ms / 250Hz ✓✓）
 ```
+
+### §5.91 ★★★★RTOS 已有一等公民「周期定时器」= PX4 hrt 的对应物（2026-09-23）
+
+**`joc-base/src/rtos/rtos.h` ✓**
+```c
+typedef enum { RTOS_TIMER_ONESHOT, RTOS_TIMER_PERIODIC } rtos_timer_mode_t;
+struct rtos_timer { rtos_timer_cb_t cb; /* 到期回调（任务上下文 ✓）*/ mode; period_ticks; };
+void rtos_timer_start(t, mode, period_ms);
+void rtos_timer_start_ticks(t, mode, period_ticks);
+```
+原文注释 ✓：「回调在**任务上下文**」「周期定时器**锚定原始相位 + period，无累积漂移**」「48 天翻转安全」✓✓
+`rtos_timer.c` 已有 selftest（单次/周期/停止/跨边界 ✓）。
+
+**⇒ 它解决的正是"1ms 粒度吃掉 1ms"的问题** ✓✓（机制不同 ✓）
+```
+现用 `delay_until(last,4)` = **相对**语义 ✗：工作 3.2ms 结束后按当前 tick 数 4 拍
+   ⇒ 落点被 1ms 边界吃掉 ✗ ⇒ 4/5 拍交替 ⇒ 平均 4.2ms ✓（与实测 4.202 吻合 ✓）
+★改用【周期定时器驱动】✓：回调每 4 拍到期的**锚定相位**唤醒 ✓（不是"从现在数 4 拍"✗）
+   ⇒ 周期 = **max(工作, 4ms)** ⇒ 工作 ≤4ms 即 **恰好 4.000ms ⇒ 250Hz** ✓✓✓
+   ⇒ 回调在任务上下文 ⇒ 可直接 `Semaphore::give()` ✓
+```
+
+**★但分辨率仍是 1ms tick** ✗（`period_ticks` ✓）⇒ 完整 B 案仍需更高 tick 频率 ✗
+
+**★★由此暴露的疑点** ✓✓：+0.19ms/拍 的系统性偏差 ⇒ **profiler 低估工作量** ✗✓
+```
+profiler 统计【任务内退休字节】⇒ **ISR 上下文的工作看不见** ✗
+（sensors 任务 500Hz 的 ISR ✓、tick ISR ✓、调度器 ✓）
+⇒ 真实工作可能 ≈**4.0–4.2ms** ✗（而非 3.2 ✗）
+```
+
+**⇒ 下一步（两步走 ✓）**
+```
+① 控制循环改【周期定时器驱动】（回调 ⇒ 信号量 ⇒ 任务阻塞 ✓）
+   ⇒ 若真因是"粒度" ⇒ 立刻 4.000ms/250Hz ✓✓；若仍 4.2 ⇒ 证明是【工作量】✗
+   —— 这步本身是【对病因的判决性实验】✓✓
+② 同时量【ISR 上下文】耗时 ✓（ISR 首尾 `cycle_now()` 取差 ✓）⇒ 补 profiler 盲区 ✓
+```
