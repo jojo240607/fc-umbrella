@@ -1185,3 +1185,33 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `x_env_faults` | ✅ **8/8** ✓ |
 `x_env_longrun` | 🔶 已转换 ✓，**待跑**（最长 ✗，约 18 分钟 ✗）|
 | `x_task_stall` | ⬜ |
+
+### §5.25 ✅ ③ 收口：x_env_longrun 2/2 ✓ · x_task_stall 1/1 ✓（2026-09-21）
+
+```
+x_env_longrun: test result: ok. 2 passed; 0 failed; finished in 248.89s ✓
+x_task_stall:  test result: ok. 1 passed; 0 failed; finished in  34.87s ✓
+```
+
+**`x_task_stall` 的失败与修正** ✓（又一个"旧前提断言"✗）
+```
+旧断言 ✓："控制名义 4ms/拍、场景 13ms/步 → 每步约 3.25 拍；应 >1200 拍" ✗
+  ⇒ 锁相步进下 **一步 = 恰好一拍控制** ✓（时基就是控制拍 ✓）⇒ 该断言【永不成立】✗
+  ⇒ 而"是否被饿死"已由 `dc > 0`（每 50 步内 CTRL_TICKS 必须推进 ✓）直接覆盖 ✓
+修正 ✓：总量校验改为与锁相语义一致（`c_total + 2 >= STEPS` ✓；传感器同 ✓）
+```
+
+**③ 总进度**
+| 测例 | 状态 |
+|---|---|
+`x_env_smoke` | ✅ 2/2 ✓ |
+`x_env_rc` | ✅ 2/2 ✓ |
+`x_env_motion` | ✅ 4/4 ✓ |
+`x_env_noise_perturb` | ✅ 4/4 ✓ |
+`x_env_faults` | ✅ 8/8 ✓ |
+`x_env_longrun` | ✅ **2/2** ✓ |
+`x_task_stall` | ✅ **1/1** ✓ |
+`gyro_bias_tolerated`（长测例 ✗）| ⏳ **唯一剩余**（~38 分钟 ✗）|
+
+**⇒ M 场时基迁移已实质完成** ✓✓（8 个测例文件全部通过 ✓），
+**唯一剩余** = 那个 65s 的关键诊断长测例 ✓（它要回答的正是 ESKF 的 36° 问题 ✓）。
