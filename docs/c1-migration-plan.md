@@ -3193,3 +3193,47 @@ profiler 统计【任务内退休字节】⇒ **ISR 上下文的工作看不见*
    —— 这步本身是【对病因的判决性实验】✓✓
 ② 同时量【ISR 上下文】耗时 ✓（ISR 首尾 `cycle_now()` 取差 ✓）⇒ 补 profiler 盲区 ✓
 ```
+
+### §5.92 ★★★★答问：app 侧 Rust 能用 RTOS 定时器吗？（2026-09-23）
+
+**现状（已查实 ✓）**
+```
+app ↔ 内核 = 【带版本号的函数指针表】app_slot（APP_SLOT_VERSION 2 == RTOS_ABI_VERSION ✓）
+  表内已有：msleep · tick_count · cycle_now · delay_until · sem_* · **dev_get/open/read/write/ioctl/close**
+           · **irq_attach/enable/disable** · spawn_mutex · spawn
+★表内【无 timer】✗ ⇒ `rtos_timer_*` 不在 ABI 面 ⇒ app 侧 Rust **今天无法直接调** ✗
+★但 dev_get + dev_ioctl + irq_attach **都在表里** ✓✓
+  ⇒ **硬件定时器（TIMx）设备 + 其中断，已可从 Rust 直用** ✓✓✓
+  · 内核 `joc-base/src/drv/timer.c`（设备 vtable ✓）
+  · ★M 场 `mcu_simulater/src/peripheral/timer.rs` ✓（+ dwt.rs ✓）⇒ 回归友好 ✓
+  · app 已有 `g_app_slot.dev_get` 用例 ✓（flyctrl/app/src/intg_test.rs ✓）
+```
+
+**⇒ 两条路**
+```
+B（★推荐 ✓，零 ABI 改动，只动 flyctrl ✓）
+  ① dev_get("timerN") + dev_ioctl(SET_REPETITION/ENABLE) ✓
+     · 定时器有【自己的时钟域】（`tim_hal_pwm_set_period(hal, timer_clk_hz, ...)` ✓）
+     ⇒ 周期以 µs/定时器计数设定 ⇒ ★**分辨率不受 1ms 系统 tick 限制** ✓✓
+  ② irq_attach(定时器 IRQ) + irq_enable ✓ ⇒ ISR 内 sem_give ✓（ISR 安全 ✓）
+  ③ 控制任务 loop { sem_wait(); work(); } ✓ ⇒ 精确唤醒 + **不忙等** ✓✓
+  ⇒ 正是 PX4 HRT（硬件定时器比较中断）做法 ✓✓
+A（可选便利 ✓）：把 rtos_timer_* 补进 ABI（**追加结构体末尾** ✓ + 版本 2→3 ✓；
+  rtos_abi.h×2 + abi.rs + app_slot.c + rtos.rs ✓）
+  ★代价：内核与 app 必须【同版本重编同刷】✗（app_header.abi_version 不匹配则拒绝挂载 ⇒ 干净失败 ✓）
+```
+
+**★逻辑要点（避免白干 ✓）**
+```
+`rtos_timer_*` 周期单位是 **period_ticks** ⇒ 与 delay_until **同在 1ms 网格** ✗
+  ⇒ 只换【软件】定时器 **不提精度** ✗；提精度的是【硬件定时器自己的时钟域】✓（B-① 的 µs ✓✓）
+★且：**任何定时器都救不了"工作 > 周期"** ✗ ⇒ 工作 >4ms 时只有【减工作量】或【降频率】有效 ✗
+```
+
+**⇒ 下一步（一步判决 ✓，纯 SDK ✓）**
+```
+① 任务内：循环顶 cycle_now() 差 ⇒ 真实任务耗时 ✓
+   周期内：两次 tick_count()/cycle_now() ⇒ 真实周期 ✓
+   ★ISR 上下文：ISR 首尾 cycle_now() 差 ⇒ 补 profiler 盲区 ✓✓
+② 判决：工作 ≤4ms ⇒ 上 B 案（必达 250Hz ✓✓）；工作 >4ms ⇒ 先减工作量（定时器无用 ✗）
+```
