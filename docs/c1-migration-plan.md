@@ -1860,3 +1860,26 @@ let (ax, ay) = 视数据集坐标系而定：NED-xy ⇒ 直用 ✓；ENU ⇒ (ay
 ```
 
 **⇒ 下一步** ✓：同法（读固件侧快照 ✓）核对 baro/GPS 的垂直约定 ⇒ 修 ⇒ 复测 ✓
+
+### §5.46 ★★★剩余问题定位：GPS 与气压的**垂直基准不一致**（差 ~10.5m）✗✓
+
+**证据（两路源码 ✓）**
+```
+GPS（`app/src/sensors/sim/gps.rs:25-35` ✓）
+  // 数据集 gps = [lat, lon, alt(m)]；PosSample.pos 为 NED [x,y,z]（z 向下为正）
+  Meter(-alt),          // ⇒ alt≈10.5095（绝对 ✓）⇒ 送出 NED z = **−10.5095（绝对）** ✓
+气压（`app/src/sensors/sim/baro.rs:20-22` ✓）
+  Meter(f.baro_alt)     // ⇒ 10.5095（向上正 ✓）
+  step_hil：update_alt(alt − self.baro_ref)   // ⇒ **相对高度** ✗
+★⇒ **两路基准不同** ✗：GPS【绝对 NED z】vs 气压【相对 alt−baro_ref】⇒ 相差 ~10.5m ✗✓
+  ⇒ 滤波在垂直方向被两路"对拉" ⇒ **高度偏差 4.665m** ✓✓（与实测吻合 ✓）
+```
+
+**修法（统一基准 ✓，以 H 场约定为准 ✓）**
+```
+H 场：`PosSample.pos` = NED（**发射点相对** ✓，悬停 ≈ [0,0,0] ✓）
+① **GPS 改相对**（推荐 ✓ 改动最小）：z = (alt_launch − alt) ✓（首帧高度为基准 ✓）
+② 或气压改绝对：`baro_ref = 0` ✓ + 估计器 p0 用绝对 NED z ✓
+★另须核对**水平 x/y** 与 NED 是否一致（数据集注释称"经纬度差 → NED 水平分量"✓，需实测验 ✓）
+⇒ 修好后复测 `x_env_smoke` ⇒ 速度/高度都应收敛 ✓
+```
