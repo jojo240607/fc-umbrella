@@ -4371,3 +4371,42 @@ test result: FAILED. 3 passed; 2 failed · **finished in 0.01s** ✓
 ④ x_drvtest / app_partition_boot / hb_periodic（环境 ✓）：产出 app 分区镜像 ✓
 ⑤ 既有 SPI gap ✓：另账
 ```
+
+### §5.127 终验记录（诚实 ✓）：H 场全绿 ✓；M 场 **341/12** ✗ —— 未达结案条件 ✓（2026-09-24）
+
+**H 场 ✓✓（完全绿 ✓）**
+```
+flyctrl-core **117/0** ✓ · fly-sim-core **176/0** ✓
+```
+
+**M 场整批（`--tests --no-fail-fast` ✓）**
+```
+**341 passed / 12 failed** ✓；54 个 test result ✓
+失败清单 ✓：① 已判"先存/环境"9 项 ✓（SPI gap ✓ / i2c 2 ✓ / drvtest ✓ /
+   x_env_faults 3 ✓ / longrun 2 ✓）＋
+② ★**新出现 7 项** ✗：x_env_noise 族 4（`accel_bias_tolerated` / `accel_bias_step_tolerated` /
+   `baro_drift_tolerated` / `noise_robust_hover` ✓）＋ x_guidance 族 3
+   （`climb_height_tracks` / `cruise_velocity_tracks` / `turn_yaw_rate_tracks` ✓）
+```
+
+**⇒ 关键更正 ✓（我先前 mbatch3 清单不可靠 ✗）**
+```
+mbatch3 我当时只读到 **52 个结果**且**未确认 ALLDONE** ✗ ⇒ **该批并未跑完** ✓
+⇒ 故"40 → 9"里的"9"是**不完整清单** ✗ ⇒ x_env_noise/guidance 族当时**可能同样在失败** ✗
+★且它们**并非负载抖动** ✗：`x_env_noise_perturb` **隔离单跑也 4 项失败** ✓✓
+```
+
+**⇒ 结案条件**未达成** ✓（诚实 ✓）**
+```
+用户要求"都没问题就提交结案"✓ —— 但上述 7 项**未判明**✗：
+   · 是否先存 ✗ 还是我的改动所致 ✗ ⇒ **必须做同款单变量 A/B** ✓
+   （方法与 §5.124 相同 ✓：临时 `let paced = false` 重跑该族 ✓，一次判明 ✓）
+★在判明前**不予结案** ✓（不掩盖、不假定 ✓）
+```
+
+**⇒ 下一步（唯一动作 ✓）**
+```
+① 对 x_env_noise 族 + x_guidance 族做 A/B（禁用控制节拍 ✓）⇒ 判"先存 ✗ / 新引入 ✗"
+② 若先存 ✓ ⇒ 与前述 9 项合并登记 ⇒ **B 案零退化** ✓ ⇒ 即可结案 ✓
+③ 若新引入 ✗ ⇒ 修（或回退节拍 ✓）后再结案 ✓
+```
