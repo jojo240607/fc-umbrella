@@ -4410,3 +4410,41 @@ mbatch3 我当时只读到 **52 个结果**且**未确认 ALLDONE** ✗ ⇒ **�
 ② 若先存 ✓ ⇒ 与前述 9 项合并登记 ⇒ **B 案零退化** ✓ ⇒ 即可结案 ✓
 ③ 若新引入 ✗ ⇒ 修（或回退节拍 ✓）后再结案 ✓
 ```
+
+### §5.128 ★★★★★终验 A/B 判决：两族**均先存** ⇒ **B 案零退化** ⇒ **结案** ✓✓✓（2026-09-24）
+
+**A/B（`let paced = false`，其余全同 ✓）**
+```
+[A/B: 禁用控制节拍]
+=== x_env_noise_perturb ===
+  baro_drift_tolerated ... FAILED · accel_bias_step_tolerated ... FAILED
+  accel_bias_tolerated ... FAILED · noise_robust_hover ... FAILED
+  ⇒ ★与启用节拍时**完全相同** ✓ ⇒ **先存** ✗
+=== x_env_motion（climb/cruise/turn ✓）===
+  cruise_velocity_tracks ... FAILED · turn_yaw_rate_tracks ... FAILED
+  climb_height_tracks ... FAILED
+  ⇒ ★**完全相同** ✓ ⇒ **先存** ✗
+★实验后**立即还原** ✓（`let paced = …init()` 复原 ✓ 并重建 ✓）
+```
+
+**⇒ 最终归因表（12 项全部结清 ✓）**
+```
+· H 场：**117/0** ✓ + **176/0** ✓（全绿 ✓）
+· M 场：**341 passed / 12 failed** —— 12 项**全部**为先存/环境 ✓：
+   既有 gap ✗（SPI ✓）· 环境 ✗（drvtest / app 分区镜像 ✓）
+   先存行为 ✗（x_env_faults 3 ✓ · x_env_noise 4 ✓ · x_env_motion 3 ✓ · longrun 2 ✓）
+   先存 ✓（i2c 2 ✓）
+   ⇒ ★**含两次独立单变量 A/B** 的强证据 ✓（禁用控制节拍后**逐项同样失败** ✓）
+```
+
+**⇒ 结案结论 ✓✓✓**
+```
+★**B 案（硬件定时器 + ISR + 信号量节拍，PX4 hrt 同型）未引入任何退化** ✓✓✓
+★核心成果（均已双向验证 ✓）：
+   · 控制拍 **4.000ms / 250.0Hz** ✓（声明时钟口径 ✓）
+   · 传感器 **500Hz ⇒ 帧/拍 = 1.9973** ✓
+   · 三口径合一 **1.0000×** ✓（固件 ms ≡ 声明时钟 ms ≡ 物理 ms ✓）
+   · 板级 `timer3`/TIM7 @250Hz ✓ + 应用层 `pace.rs`（宏模板，失败自动回退 ✓）
+   · 修掉**先存模型缺陷** CVR 回卷方向 ✗（溢出数曾灌水 39× ⇒ 很可能历史相位/布局敏感诸谜之共根 ✓）
+· 旧时基遗留清理 ✓：单一真值源（168_000/168e6/½ 自动跟随 ✓）· 观察窗改固件毫秒 ✓
+```
