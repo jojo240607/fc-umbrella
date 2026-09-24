@@ -52,6 +52,7 @@ git log --oneline -5 && git submodule status    # 当前版本快照
 ```
 
 详见 `docs/integration.md`（每项 60–100s 级 MCU 仿真测试）。
+★全部测试用例的分类总账（M 场五类：飞控 real/默认/HIL/平台层/驱动）见 `docs/test-inventory.md`。
 
 ### M 场基线（2026-09-24 实测，出处 §5.130；带基线步骤用 `step_bl` 判定）
 
