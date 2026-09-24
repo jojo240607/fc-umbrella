@@ -109,7 +109,7 @@ x_sched_assert_ctx(1)。**均不在例行回归**。
   multi_drone/rc_modes/sensor_noise/vio_rtk/wind_scan/… 场景级集成（状态未盘点，另账）。
 - `flyctrl`：flyctrl-core（lib 93 + 集成 24 = 117，**例行**）。
 
-## 五、在案失败清单（2026-09-24，均非新退化）
+## 五、在案失败清单（2026-09-24 傍晚全量 80 目标首跑后更新）
 
 | 项 | 类 | 状态 | 分析方向 |
 |---|---|---|---|
@@ -117,6 +117,11 @@ x_sched_assert_ctx(1)。**均不在例行回归**。
 | x_env_faults::baro_step_bounded_by_gps 1 项 | A(real) | ✗ 在案（早于 B 案） | ESKF 对 baro 阶跃的水平位置 GPS 约束（§5.9x 已立案分析） |
 | x_env_motion::climb_height_tracks 1 项 | A(real) | ✗ 在案 | 高度通道跟踪；同族 cruise/turn 均绿，H 场 vertical_channel/tecs 全绿 ⇒ M 环境特异性（baro 积分/爬升模型） |
 | x_bus_trace i2c×2 | D(模型级) | ✗ 在案 §5.125/5.126 | I2C 外设模型 sniff 签名 |
+| x_hover_demo 0/1 | A(real) | ✗ 在案（§5.131 新曝光） | est 四元数 w≈-0.997（180° 翻转）而真值位置仍稳定悬停 ⇒ 疑似 ESKF 姿态发散或四元数读数约定问题；同场电机混控深度饱和（两电机贴 0/满） |
+| x_drvtest（宿主 SD 校验） | D(驱动) | ✗ 在案（§5.131 新曝光） | ABI 已同步 v2 后：应用内自检 54/54 全过 ✓，但宿主侧 SD 扇区 0 读到填充值 0xA5（应用写扇区与宿主校验错位或 SD 模型通路问题） |
+
+★2026-09-24 傍晚已修（§5.131）：x_hover_env / x_hover_noise 帧约定+判据窗口（✓ 绿）；
+x_drvtest ABI 同步（挂载+自检 ✓，余宿主 SD 校验一项）。
 
 维护规则：增/删测试 ⇒ 同步 `scripts/integrate.sh` 基线 + `docs/h-field.md` 基线表 + 本文档，
 各附一句原因与日期；新测试文件放对应分类子目录并在 `mcu_simulater/Cargo.toml` 声明 `[[test]]`。

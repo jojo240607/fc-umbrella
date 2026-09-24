@@ -4583,3 +4583,37 @@ x_env_longrun 2/0 ✓ · x_vperiph_mcusim 3/0 ✓（顺带回归验证 ✓）
 · 教训（§5.129③ 推广）✓：产物同步按 feature 判别 → 产物【命名】也必须按 feature 区分，
   "同名文件 last-build-wins"是跨 feature 污染的通用形态 ✓
 ```
+
+### §5.131 ★★★M 场 80 目标全量首跑（分类子目录化后确认）：修 hover 帧约定 + drvtest ABI 同步；74 绿 + 6 在案 ✓（2026-09-24）
+
+**背景 ✓**：测试分类子目录化（80 目标 6 子目录）后，按用户要求全量首跑确认。
+
+**修复一 ✓：x_hover_env / x_hover_noise 高度判据帧约定（纯测试口径错，固件无恙）**
+```
+HOVER_D=-5.0（NED）vs 仿真实位置 p[2]=+4.9（ENU）⇒ 5m 目标双计 ⇒ 恒 dz=9.9m 假失败 ✗
+改 (p[2]+HOVER_D) 后实证：悬停 5.0m±0.1m（2% 精度）、20s 后水平漂移 0.08m/窗、
+满风场+噪声姿态 14°<25° ✓✓ ⇒ 固件控制表现优秀
+· env 判据窗口 10s→20s（traj[2500]→[5000] 与守卫同步——曾只改守卫漏切片，二跑才定位）
+· demo 的 FlySimState 位置为 NED（p2≈-5.2），原式即正确——勿"统一"（曾误改回退 ✓）
+· 教训：同族测试的仿真帧约定可能相反，修判据前先实证 p[2] 物理（起飞方向）✓
+```
+
+**修复二 ✓：joc-drvtest-app app 头 abi_version 1→2（a8635c6 之后内核已 v2）**
+```
+joc-base 09-19 c0c9697 起 RTOS_ABI_VERSION=2（rtos_sleep_until_abs），drvtest app.ld
+仍 LONG(1) ⇒ app_slot 拒挂 ⇒ x_drvtest 全挂 ✗。同步后：挂载 ✓ hb ✓
+内建自检 56 用例 54 pass / 0 fail / 2 skip ✓；余宿主侧 SD 扇区 0 校验读 0xA5
+（填充值）——应用写扇区与宿主校验错位或 SD 模型通路问题 ⇒ 独立立案另查
+```
+
+**全量首跑结果 ✓（80 目标，串行 ~70min）**
+```
+绿 74 ✓（含 zz_ctlprof 13/13、m_jos_acceptance 6/6、x_gdb_server、x_monitor_repl 等
+   首次拿到 B案后记录的平台层目标）
+在案 6（均非今日改动引入 ✓）：modes LOITER（B 类默认固件）· faults::baro_step（A）
+   · motion::climb_height（A）· bus_trace i2c×2（D 模型）· hover_demo 翻转（A，新曝光：
+   est 四元数 w≈-0.997 而真值位置仍稳 ⇒ ESKF 姿态或四元数读数问题另查）
+   · drvtest 宿主 SD 校验（D，新曝光）
+教训（§5.129④ 推广）✓：harness 环境变量（JOC_APP_FLYCTRL 等）属于"步骤定义"，
+   裸 cargo test 复跑会静默用错固件——hil/shmem 秒挂假象即此；复跑必须带同款 env ✓
+```
