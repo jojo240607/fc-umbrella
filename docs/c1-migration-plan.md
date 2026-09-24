@@ -4516,3 +4516,70 @@ M 场整跑：**PASS=13 / FAIL=1** ✓ —— 唯一 FAIL = x_bus_trace i2c 两�
 ③ ★教训二 ✓：构建产物同步必须**按 feature 判别**，"最后构建者获胜"会静默污染兄弟产物 ✓
 ④ 遗留挂账 ✓：x_bus_trace i2c 两项（在案先存 ✓）；common/mod.rs 等另有 4 处 `m=[` 旧格式
    引用（EnvHarness/hil/vperiph/shmem，均不 gating 今日测试，另账跟进 ✓）
+
+### §5.130 ★★★★★M 场盲区补齐：env 家族 8 目标纳入例行回归 + 第二处错配根因（app.elf last-build-wins）修复 ✓✓✓（2026-09-24）
+
+**任务 ✓**：把存在但不在例行 M 场的 flyctrl 对应测试补进回归——x_env_* 全家（smoke/rc/faults/
+noise/motion/longrun）+ x_flyctrl_modes + x_sensor_rate（25+1+1 项测试）。
+
+**★动手前先踩破一条船：§5.128 env 家族数字不可作基线 ✗（诚实 ✓）**
+```
+EnvHarness 加载 flyctrl_real_app_bin()（/tmp/flyctrl_real.bin），但终验批（09-24）跑
+env 家族时该文件已被 §5.129 的 sync 污染 = HIL 固件 ⇒ 批次里 faults 5/3、noise 3/4、
+motion 1/3、longrun 0/2 全是对着 HIL 固件测的（bin 与 app.elf 恰好同为 HIL ⇒ 探针
+"一致"，假阳性绿：smoke/rc 2/2）✗ ⇒ 绝对值不可作真固件基线 ✓
+· A/B 单变量结论（B案零退化）**不受影响** ✓：两臂加载同一（污染）bin，比较内部自洽 ✓
+· 今日修复后真固件实测反而更绿：noise 3/4→7/0、motion 1/3→3/1、faults 5/3→7/1 ✓
+```
+
+**★第二处错配根因（同一 bug 的第二张脸）：`build_app.py` ELF 固定写 `app.elf` ✗**
+```
+· app.elf 与 feature 无关，每次构建覆盖（last-build-wins）✗
+· elfsym::app_sym 全局单例固定从 flyctrl/app.elf 解析符号 ✗
+· .app_globals 段【基址】固定（0x2000F000），但【段内符号偏移】随 feature 漂移：
+  实测 hil vs real ELF：SENSOR_SEQ 0x200116DC vs 0x200108C0（差 +0xE1C）、
+  SENSOR_FRAME +0x118、EST_MTX +0xE28、ESKF_COUNTS +0xEB0 ✗
+⇒ 加载 real.bin + 读 HIL ELF 符号 = 地址错配 ⇒ 探针读错位（今日家族 100% 失败，
+  x_sensor_rate 显示 sensor loops=0.0 而时钟口径全部正常 = 决定性签名 ✓）
+· 注：elfsym 的动态符号解析（§5.121）是为【同 feature 重建】设计的 ✓（其文档记载的
+  SENSOR_SEQ 漂移案例正是 hil/real 之差）；跨 feature 组合是盲区 ✗
+```
+
+**修复（四层，2026-09-24）✓**
+```
+① flyctrl/build_app.py：ELF 按 feature 命名（app.elf/app_real.elf/app_hil.elf）；
+   sync 成对同步 bin+ELF（real → /tmp/flyctrl_real.{bin,elf} + flyctrl/app_real.{bin,elf}；
+   hil → flyctrl/app_hil.elf + /tmp/flyctrl_hil.elf）
+② mcu_simulater/src/artifact.rs：+flyctrl_real_app_elf()（JOC_APP_FLYCTRL_REAL_ELF →
+   /tmp/flyctrl_real.elf → flyctrl/app_real.elf → 兜底 app.elf）
+   +flyctrl_hil_app_elf()（JOC_APP_FLYCTRL_ELF → /tmp/flyctrl_hil.elf → flyctrl/app_hil.elf）
+③ mcu_simulater/src/elfsym.rs：+use_app_elf()（进程级 override，首次 app_sym 前设置）
+④ 调用点 9 处：common/mod.rs(EnvHarness)、x_sensor_rate、x_hover_{env,noise,demo}、
+   x_vperiph_mcusim×3、x_toml_topology、zz_ctlprof —— 全部为 real-bin 消费者；
+   x_flyctrl_modes 不用符号（默认 bin + 默认 app.elf 修后自然同源）；
+   x_hil_mcusim/x_shmem_mcusim/x_fault_injection 不用符号（今日通过不受影响 ✓）
+· flyctrl/.gitignore +app_*.bin / app_*.elf（app_real.bin 保持跟踪 = artifact 兕底）
+```
+
+**修复后真固件家族实测（新基线，2026-09-24）✓**
+```
+x_env_smoke 2/0 ✓ · x_env_rc 2/0 ✓ · x_sensor_rate 1/0 ✓ · x_env_noise_perturb 7/0 ✓
+x_env_longrun 2/0 ✓ · x_vperiph_mcusim 3/0 ✓（顺带回归验证 ✓）
+在案失败 3 项（均非今日新引入 ✓）：
+· x_env_faults::baro_step_bounded_by_gps —— 早于 B 案即 ✗（§5.9x 时代已单独立案分析 ✓）
+· x_env_motion::climb_height_tracks —— §5.128 判先存（基于 hil 固件 A/B）；真固件上
+  cruise/turn 已绿 ⇒ 仅 climb 一项维持 ✗（真固件口径以本次实测为准登记 ✓）
+· x_flyctrl_modes::uplink_do_set_mode —— LOITER(5) 注入后未见 uplink 处理日志；
+  §5.12 时代即 ✗（当时签名"业务任务未拉起"），今日签名不同（任务已起、指令未处理），
+  另账追查 ✓（与符号错配无关——该测试不读 elfsym ✓）
+```
+
+**integrate.sh 例行化 ✓**
+```
+· +step_bl <名> <超时> <基线P> <基线F>（仿 h_verify.sh run_family 纪律）：
+  failed>基线 → FAIL；passed≠基线 → WARN；否则 PASS 含在案失败标注 ✓
+· +do_env（8 步带实测基线）接入 all 与 env 选择器 ✓；x_bus_trace 转 step_bl 3/2 ✓
+· h-field.md 新增 M 场基线表 + 快照 ✓
+· 教训（§5.129③ 推广）✓：产物同步按 feature 判别 → 产物【命名】也必须按 feature 区分，
+  "同名文件 last-build-wins"是跨 feature 污染的通用形态 ✓
+```

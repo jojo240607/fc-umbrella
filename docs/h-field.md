@@ -48,10 +48,30 @@ git log --oneline -5 && git submodule status    # 当前版本快照
 
 ```bash
 ./scripts/integrate.sh firmware   # joc-base ELF + 3 个固件（首次/子模块变更后必须）
-./scripts/integrate.sh            # 全部步骤；单步：firmware|sensors|unlock|app|sil|hil|shmem|fault
+./scripts/integrate.sh            # 全部步骤；单步：firmware|sensors|unlock|app|sil|hil|shmem|fault|env
 ```
 
 详见 `docs/integration.md`（每项 60–100s 级 MCU 仿真测试）。
+
+### M 场基线（2026-09-24 实测，出处 §5.130；带基线步骤用 `step_bl` 判定）
+
+判定语义：`failed > 基线F` ⇒ FAIL（新退化）；`failed == 基线F 但 passed ≠ 基线P` ⇒ WARN（测试增删）；否则 PASS（在案失败标注）。
+
+| 步骤 | 基线 P/F | 在案失败（先存，非新退化） | 出处 |
+|---|---|---|
+| x_bus_trace | 3/2 | i2c sniff ×2 | §5.125/5.126 |
+| x_env_smoke | 2/0 | — | §5.130 |
+| x_env_rc | 2/0 | — | §5.130 |
+| x_sensor_rate | 1/0 | — | §5.130 |
+| x_flyctrl_modes | 0/1 | LOITER uplink 未处理（§5.12 时代即 ✗） | §5.130 |
+| x_env_faults | 7/1 | baro_step_bounded_by_gps（早于 B 案即 ✗） | §5.130 |
+| x_env_noise_perturb | 7/0 | — | §5.130 |
+| x_env_motion | 3/1 | climb_height_tracks | §5.130 |
+| x_env_longrun | 2/0 | — | §5.130 |
+
+★基线为【真固件】口径（real bin + 同 feature ELF）。§5.128 批次的 env 家族数字系
+HIL 产物污染（bin/ELF 跨 feature 错配），不可作基线（详见 migration-plan §5.130）。
+其它 M 场步骤（sensors/unlock/app/sil/hil/shmem/fault_injection）基线 = 全绿 0F。
 
 ## 基线维护
 
@@ -60,6 +80,7 @@ git log --oneline -5 && git submodule status    # 当前版本快照
 
 ## 当前状态快照
 
+- **2026-09-24（傍晚，§5.130）**：M 场盲区补齐——env 家族 8 目标 + modes/sensor_rate 首次纳入例行回归（`integrate.sh env` / `all`，step_bl 带基线）。揪出并修复**同一错配根因**：`build_app.py` 把所有 feature 的 ELF 覆写到 `app.elf`（last-build-wins），而 elfsym 从 `app.elf` 解析符号；.app_globals 段内偏移随 feature 漂移（实测 hil vs real 的 SENSOR_SEQ 差 +0xE1C）⇒ 加载 real.bin 的测试探针全部错位。修复后 ELF 按 feature 命名（app.elf/app_real.elf/app_hil.elf）+ bin/ELF 成对同步 + `elfsym::use_app_elf` 显式指定。真固件家族基线：smoke 2/0、rc 2/0、rate 1/0、noise 7/0、longrun 2/0、faults 7/1、motion 3/1、modes 0/1（在案 3 项）。★§5.128 env 家族数字（faults 5/3、noise 3/4、motion 1/3）系 HIL 固件行为，不可作真固件基线；其 A/B 单变量结论（B 案零退化）不受影响（两臂同 bin）。
 - **2026-09-24（下午，§5.129）**：M 场例行回归 **PASS=13/FAIL=1**（唯一失败 = x_bus_trace i2c 两项，在案先存）；揪出并修复两处：
   ① 终验批覆盖盲区（54/80 目标，§5.129 详查）② `build_app.py` sync 污染 real.bin + unlock 测试 `m=[`→`m_permille=[` 期望过期；终验盲区目标（real_sensors/unlock/fault_injection/app/hil/shmem）首次拿到 B案后全绿记录 ✓。
 - **2026-09-24**：H 场实测全绿 **117/0 + 176/0**（外围 6/0）；HEAD `86dd918`

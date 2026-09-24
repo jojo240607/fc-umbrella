@@ -20,6 +20,11 @@
 #     /tmp/flyctrl_hil.bin（hil）；HIL 测试经 JOC_APP_FLYCTRL 指向 hil 产物。
 #
 # 机器慢（内存压力/swap）时默认 --release 跑 MCU 仿真测试（~60-100s/测试）。
+#
+# 用法：./scripts/integrate.sh [all|firmware|sensors|unlock|app|sil|hil|shmem|fault|env|hover]
+#   all  ≈ 35-40 分钟（含 env 家族）；env ≈ 24 分钟（环境家族，带基线）。
+# 带基线的步骤（step_bl）语义仿 h_verify.sh：failed>基线→FAIL；passed≠基线→WARN；
+# 否则 PASS（在案失败标注）。基线变更须同步 docs/h-field.md + migration-plan 并附原因日期。
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE="--release"
@@ -40,6 +45,42 @@ step() {
         FAIL=$((FAIL+1)); FAILED_STEPS+=("$name")
     fi
     rm -f /tmp/fc_intg_$$.log
+}
+
+# step_bl <名称> <超时秒> <基线passed> <基线failed> <命令...>
+# 带基线的测试步骤（仿 h_verify.sh run_family 纪律，2026-09-24 §5.130 引入）：
+#   failed >  基线F                     → FAIL（新退化，必须处理）
+#   failed == 基线F 且 passed == 基线P  → PASS（基线F>0 时标注在案失败）
+#   failed == 基线F 但 passed ≠ 基线P   → WARN（测试增删 ⇒ 同步基线+docs）
+#   无 test result（编译错/超时/崩溃）  → FAIL
+step_bl() {
+    local name="$1" secs="$2" bp="$3" bf="$4"; shift 4
+    echo ""
+    echo "==================== [STEP] $name（基线 ${bp}P/${bf}F）===================="
+    local log rc p f
+    log="$(mktemp /tmp/fc_intg_XXXXXX.log)"
+    timeout "$secs" "$@" >"$log" 2>&1
+    rc=$?
+    read -r p f <<< "$(sed -nE 's/^test result: \w+\. +([0-9]+) passed; +([0-9]+) failed;.*/\1 \2/p' "$log" \
+        | awk '{p+=$1; f+=$2} END {print p+0, f+0}')"
+    if [ "$p" -eq 0 ] && [ "$f" -eq 0 ]; then
+        echo "[FAIL] $name：无测试结果（exit=$rc，编译错误/超时？日志尾部：）"
+        tail -12 "$log"
+        FAIL=$((FAIL+1)); FAILED_STEPS+=("$name")
+    elif [ "$f" -gt "$bf" ]; then
+        echo "[FAIL] $name: ${p}P/${f}F > 基线 ${bp}P/${bf}F ⇒ 新退化（exit=$rc）"
+        grep -E "^test .* FAILED" "$log" | head -8
+        FAIL=$((FAIL+1)); FAILED_STEPS+=("$name")
+    elif [ "$p" -ne "$bp" ]; then
+        echo "[WARN] $name: ${p}P/${f}F（failed=基线但 passed≠基线 ${bp} ⇒ 测试增删了？更新基线+docs）"
+        PASS=$((PASS+1))
+    else
+        local note=""
+        [ "$bf" -gt 0 ] && note="（含 $bf 项在案失败，见 docs 基线表）"
+        echo "[PASS] $name: ${p}P/${f}F ${note}✔"
+        PASS=$((PASS+1))
+    fi
+    rm -f "$log"
 }
 
 # joc-base minimal ELF 的查找与导出（mcu_simulater::artifact 解析顺序同源）：
@@ -92,8 +133,35 @@ do_shmem()    { need_elf || return 0
 do_fault()    { need_elf || return 0
     step "MCU 故障注入 x_fault_injection" 600 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_fault_injection";
-    step "总线嗅探 x_bus_trace" 600 \
+    step_bl "总线嗅探 x_bus_trace（i2c×2 在案先存 §5.125/5.126）" 600 3 2 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_bus_trace"; }
+
+# 环境家族（EnvHarness：real-sensors 固件 + jOS + flysim 虚拟外设）。
+# 基线（2026-09-24 实测，【真固件】口径 = real bin + 同 feature ELF，出处 §5.130；
+# §5.128 批次 env 家族数字系 HIL 产物污染 bin/ELF 错配，不可作基线）：
+#   x_env_smoke 2/0 · x_env_rc 2/0 · x_sensor_rate 1/0
+#   x_flyctrl_modes 0/1（在案：LOITER uplink 未处理，§5.12 时代即 ✗）
+#   x_env_faults 7/1（在案先存：baro_step_bounded_by_gps）
+#   x_env_noise_perturb 7/0 · x_env_motion 3/1（在案：climb_height_tracks）
+#   x_env_longrun 2/0
+# 增/删测试后：更新此基线 + docs/h-field.md 基线表，并附一句原因与日期。
+do_env()      { need_elf || return 0
+    step_bl "环境冒烟 x_env_smoke" 300 2 0 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_smoke";
+    step_bl "遥控链路 x_env_rc" 600 2 0 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_rc";
+    step_bl "传感器采样率 x_sensor_rate" 300 1 0 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_sensor_rate";
+    step_bl "飞行模式 MAVLink x_flyctrl_modes" 300 0 1 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_flyctrl_modes";
+    step_bl "环境故障注入 x_env_faults" 300 7 1 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_faults";
+    step_bl "噪声扰动 x_env_noise_perturb" 900 7 0 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_noise_perturb";
+    step_bl "机动跟踪 x_env_motion" 300 3 1 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_motion";
+    step_bl "长跑稳定 x_env_longrun" 600 2 0 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_longrun"; }
 do_hover()    { need_elf || return 0
     step "虚拟外设直通闭环 x_vperiph_mcusim" 900 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_vperiph_mcusim";
@@ -102,7 +170,7 @@ do_hover()    { need_elf || return 0
 
 WHAT="${1:-all}"
 case "$WHAT" in
-    all)       do_firmware; do_sensors; do_unlock; do_app; do_sil; do_hil; do_shmem; do_fault ;;
+    all)       do_firmware; do_sensors; do_unlock; do_app; do_sil; do_hil; do_shmem; do_fault; do_env ;;
     firmware)  do_firmware ;;
     sensors)   do_sensors ;;
     unlock)    do_unlock ;;
@@ -111,8 +179,9 @@ case "$WHAT" in
     hil)       do_hil ;;
     shmem)     do_shmem ;;
     fault)     do_fault ;;
+    env)       do_env ;;
     hover)     do_hover ;;
-    *) echo "未知步骤: $WHAT（可选 all/firmware/sensors/unlock/app/sil/hil/shmem/fault/hover）"; exit 2 ;;
+    *) echo "未知步骤: $WHAT（可选 all/firmware/sensors/unlock/app/sil/hil/shmem/fault/env/hover）"; exit 2 ;;
 esac
 
 echo ""
