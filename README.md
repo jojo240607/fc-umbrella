@@ -30,7 +30,10 @@ git submodule update --init --recursive
 # 3) 一键回归（各仓库测试）
 ./scripts/verify.sh
 
-# 4) 一键联调（构建固件 + 全部联调测试：虚拟外设/解锁飞行/SIL/HIL/共享内存/故障注入）
+# 4) H 场回归（纯 PC 模拟，先 H 后 M 纪律，见 docs/h-field.md）
+./scripts/h_verify.sh              # --fast 快速档（秒级，跳过 fly-sim-core 慢测）
+
+# 5) 一键联调（构建固件 + 全部联调测试：虚拟外设/解锁飞行/SIL/HIL/共享内存/故障注入）
 ./scripts/integrate.sh            # 全部
 ./scripts/integrate.sh unlock     # 单步骤：firmware|sensors|unlock|app|sil|hil|shmem|fault|hover
 ```
@@ -74,6 +77,7 @@ git -c protocol.file.allow=always submodule update --init --recursive
 - [`docs/architecture.md`](docs/architecture.md) — 整体架构（三层仿真栈 / 数据流 / 各层职责）
 - [`docs/engineering.md`](docs/engineering.md) — 各工程功能详解
 - [`docs/integration.md`](docs/integration.md) — 联调方式（虚拟外设 / SIL / HIL / 故障注入 / 解锁飞行）
+- [`docs/h-field.md`](docs/h-field.md) — H 场 / M 场验证流程（新会话快速上手：定义 / 命令 / 基线 117+176）
 - [`docs/postmortem-rtos-pendsv-fallback.md`](docs/postmortem-rtos-pendsv-fallback.md) — 复盘：PendSV 空队列回退破坏睡眠链表（jOS 调度器缺陷定位与修复全过程）
 - [`scripts/integrate.sh`](scripts/integrate.sh) — 一键联调（构建固件 + 全部联调测试）
 - [`scripts/verify.sh`](scripts/verify.sh) — 一键回归（各仓库核心测试）

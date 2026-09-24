@@ -4448,3 +4448,71 @@ mbatch3 我当时只读到 **52 个结果**且**未确认 ALLDONE** ✗ ⇒ **�
    · 修掉**先存模型缺陷** CVR 回卷方向 ✗（溢出数曾灌水 39× ⇒ 很可能历史相位/布局敏感诸谜之共根 ✓）
 · 旧时基遗留清理 ✓：单一真值源（168_000/168e6/½ 自动跟随 ✓）· 观察窗改固件毫秒 ✓
 ```
+
+### §5.129 ★★★★★M 场例行回归揪出终验盲区 + 总根因（构建 sync 污染）：修复后 13/14 绿（余 1=在案先存）✓✓✓（2026-09-24）
+
+**背景 ✓**：H 场全绿（117/0+176/0+6/0）后按 §5.38 纪律进 M 场（`integrate.sh firmware && integrate.sh`）。
+
+**首轮结果 ✗（10 PASS / 4 FAIL）⇒ 按 §5.127 纪律逐项判明 ✓**
+```
+① x_bus_trace i2c 两项 ✗ —— 在案先存 ✓（§5.125/5.126 归因表 #5-6 ✓，0.01s 纯外设模型 ✓）
+② x_flyctrl_real_sensors / x_flyctrl_unlock_flight / x_fault_injection(2) ✗
+   ⇒ ★四项**均不在** §5.127/5.128 终验批记录内 ✗ ⇒ 疑"新引入" ✗ ⇒ 必须判明 ✓
+```
+
+**★重大发现：终验批存在覆盖盲区 ✗（诚实 ✓）**
+```
+§5.127/5.128 "整批"仅 **54 个 test result**，而 mcu_simulater 有 **80 个测试目标** ✓
+按 cargo 字母序：lib(1)+bench(3)+debug(1)+m*×39 = 44，接 x_* 序至 x_env_smoke ≈ #55 截断 ✓
+⇒ #56–#80（x_fault_injection / x_flyctrl_* 全家 / x_hil / x_shmem / x_vperiph / x_hover_* 等
+   26 个目标）**终验批从未跑到** ✓ ⇒ "341/12 全部先存/环境"的结论**未覆盖这 26 项** ✓
+⇒ 今日 4 项失败不能用终验背书 ✓ —— 反而是盲区的**首次曝光** ✓
+```
+
+**★总根因（三重证据链 ✓）：`build_app.py::sync_to_test_artifact` 无条件污染 `/tmp/flyctrl_real.bin` ✗**
+```
+① 失败签名（隔离重跑两次，耗时 ±0.2% 复现 ⇒ 确定性 ✓）：
+   mounted=true tasks=true hb=false · I2C 从设备读 0 次 · SPI 4 次 · GPS 推流 341 帧无人消费
+   控制台铁证：`sensor: task started (WRITE_FRAME=1, real=0, hil=1)` ✗✗
+   ⇒ real-sensors 固件里传感器任务却报 hil=1 ⇒ **加载的 bin 根本不是 real-sensors 构建** ✓
+② md5：/tmp/flyctrl_real.bin ≡ /tmp/flyctrl_hil.bin（5d028d72，68908B）✗✗
+③ 根因：sync（0c05e6f，09-23 引入，治 §5.29"测旧货"）**不区分 feature**，
+   把【每次】构建产物都覆盖到 /tmp/flyctrl_real.bin ⇒ do_firmware 顺序 real→hil，
+   **hil 构建最后写入 ⇒ real 路径被 HIL 固件覆盖** ✗
+   时间线闭合 ✓：09-21 §5.12 real_sensors 9.9s 通过（sync 未引入）→ 09-23 sync+hb 定点化
+   → 09-24 终验盲区未覆盖 ⇒ bug 隐身 → 今日首曝 ✓
+```
+
+**第二处（独立）✗：x_flyctrl_unlock_flight 测试期望过期 ✗**
+```
+修 sync 后重跑：real_sensors **7.96s 通过** ✓（≈历史 9.9s ✓）· fault_injection **2/2 通过** ✓
+unlock_flight 仍 ✗（:130"电机指令恒零 m="）—— 但控制台 armed=true ✓ · m_permille=[550→577] 非零 ✓
+⇒ 测试提取 `m=[`，而固件 hb 已改名 `m_permille=[`（17b733b，09-23 定点化）✗ ⇒ 期望未跟上 ✓
+⇒ 机械修正（非放松 ✓）：提取改 `m_permille=[`（旧名 `m=[` 兼容回退）✓
+```
+
+**修复（两处，均机械/意图不变 ✓）**
+```
+① flyctrl/build_app.py：sync_to_test_artifact 增加 feature 判别 —— 只同步 real-sensors 构建 ✓
+   （其余 feature M 场各取约定路径：flyctrl/app.bin / JOC_APP_FLYCTRL ✓）
+② mcu_simulater/tests/x_flyctrl_unlock_flight.rs：电机字段解析跟新 hb 格式 ✓
+```
+
+**修复后终态 ✓✓✓**
+```
+H 场 fast：117/0 + 6/0 ✓（fly-sim-core 源码零改动，晨间 176/0 仍有效 ✓）
+固件产物核验：real.bin(60984B,c865c471) ≠ hil.bin(68908B,5d028d72) ✓ · BMI088 字符串在位 ✓
+M 场整跑：**PASS=13 / FAIL=1** ✓ —— 唯一 FAIL = x_bus_trace i2c 两项（在案先存 ✓）
+★终验盲区目标首次拿到 B案后通过记录 ✓：real_sensors / unlock_flight / fault_injection /
+   x_flyctrl_app / x_hil_mcusim / x_shmem_mcusim 全绿 ✓
+⇒ unlock 全链路实测 ✓：armed=true · 节拍 4.000ms ✓ · GPS fix ✓ · EKF 收敛 ✓ · 电机 550-577‰ ✓
+```
+
+**⇒ 结论与教训 ✓**
+```
+① 今日 4 项失败 = 构建 sync 污染(3 目标) + 测试期望过期(1 项) ⇒ **均非 B案退化、非算法回归** ✓
+② ★教训一 ✓：**整批跑完必须核对 ALLDONE / result 行数 == 目标数**（§5.127 教训的推广 ✓）
+   —— 80 目标只见到 54 个 result 就下"全部先存"结论，把 26 项盲区当了结案 ✓✗
+③ ★教训二 ✓：构建产物同步必须**按 feature 判别**，"最后构建者获胜"会静默污染兄弟产物 ✓
+④ 遗留挂账 ✓：x_bus_trace i2c 两项（在案先存 ✓）；common/mod.rs 等另有 4 处 `m=[` 旧格式
+   引用（EnvHarness/hil/vperiph/shmem，均不 gating 今日测试，另账跟进 ✓）
