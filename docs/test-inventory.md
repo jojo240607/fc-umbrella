@@ -4,6 +4,23 @@
 > 测的是什么**——文件名前缀（x_/m_/zz_）只是历史习惯，不代表分类。
 > 产物路径约定见 `mcu_simulater/src/artifact.rs`；构建流见 `flyctrl/build_app.py`。
 
+## 目录布局（2026-09-24 起，mcu_simulater/tests/）
+
+```mermaid
+mcu_simulater/tests/
+├── common/mod.rs      # EnvHarness 等共享脚手架（A 类经 #[path] 引用）
+├── flight_real/       # A 类：飞控业务（real-sensors 固件，17 目标）
+├── flight_default/    # B 类：飞控业务（默认固件，2 目标）
+├── hil/               # C 类：HIL 双机闭环（hil 固件，2 目标）
+├── platform/          # D 类：MCU 模型 / jOS / SDK / 总线（53 目标）
+├── drvtest/           # D 类：驱动测试（joc-drvtest-app，4 目标）
+└── bench/             # E 类：bench / 杂项（3 目标）
+```
+
+★Cargo 集成测试不自动发现子目录 ⇒ `Cargo.toml` 尾部显式 `[[test]]`（autotests = false），
+**目标名全部保持不变** ⇒ integrate.sh / h_verify.sh / 文档的 `--test <名>` 无需改动。
+新增测试时：文件放入对应子目录 + Cargo.toml 加一条 `[[test]]`。
+
 ## 一、三大场总览
 
 | 场 | 环境 | 判定 | 入口 | 规模 |
@@ -102,4 +119,4 @@ x_sched_assert_ctx(1)。**均不在例行回归**。
 | x_bus_trace i2c×2 | D(模型级) | ✗ 在案 §5.125/5.126 | I2C 外设模型 sniff 签名 |
 
 维护规则：增/删测试 ⇒ 同步 `scripts/integrate.sh` 基线 + `docs/h-field.md` 基线表 + 本文档，
-各附一句原因与日期。
+各附一句原因与日期；新测试文件放对应分类子目录并在 `mcu_simulater/Cargo.toml` 声明 `[[test]]`。
