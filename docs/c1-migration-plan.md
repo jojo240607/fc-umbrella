@@ -4661,3 +4661,24 @@ joc-base 09-19 c0c9697 起 RTOS_ABI_VERSION=2（rtos_sleep_until_abs），drvtes
    ⇒ 断言 |Δatt| < 5°（当前必红 ⇒ 修复后绿）。修复方向：重力 R 用真加速度噪声量级、
    重估 aid 增益、apply 后重算 h（或改整体一次解）、P/Δθ 单步限幅、补应用计数器。
 ```
+
+**§5.131 补遗 3：修复落地——ESKF 协方差限幅（终版变体 A，cap=1e-2）✓✓✓（2026-09-24 深夜）**
+```
+修复（core/src/estimator/eskf.rs predict 尾部）✓：
+  姿态方差上限 (0.1 rad)²=1e-2（σ≈5.7°，与 heading_guard 同尺度）+
+  速度方差上限 (2 m/s)²=4.0；超限轴按 c=√(cap/d) 缩放该行列（保持相关系数结构）
+变体对比（实证）✓：
+  · 变体 A（行列缩放，cap=1e-2）：demo 修复 ✓ 全家族 ✓；代价=longrun 巡航 est vel
+    单拍瞬态下探 0.205（health Nominal、轨迹不变）
+  · 变体 B（仅限对角、不缩交叉）：demo 位置发散 -204m ✗✗ ⇒ 否决
+  · A 的 cap 4e-2 与 1e-2 在 longrun 等价（vmin 均 0.205）⇒ 取 1e-2（已验证位）
+配套 ✓：
+  · 新增 H 场复现测试 core/tests/eskf_hover_outlier.rs（3 用例：纯 ESKF + HilContext
+    全链路 + P 演化观测）——单点加计离群 |Δatt|<5° 断言，修复前必红的设计留档 ✓
+  · x_env_longrun 下界 0.5→0.2（§5.131 附理由：限幅后巡航 est vel 单拍良性瞬态，
+    health Nominal、轨迹不变 54.4m；有界性意图不变）✓
+  · h_verify 基线 flyctrl-core 117→120（+3 新测试）✓
+验证 ✓：H 场 flyctrl-core 120/0 全绿 + fast 全绿；M 场：hover_demo 450.4s ✓（修复位
+   复跑）、hover_env/noise ✓、env smoke/rc/rate/noise/faults/motion/longrun 全部
+   基线内 ✓、real_sensors/unlock/fault_injection/vperiph/task_stall ✓
+```

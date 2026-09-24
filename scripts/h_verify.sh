@@ -9,14 +9,14 @@
 #   ./scripts/h_verify.sh --fast    # 快速档（flyctrl-core + sensor_fault，秒级；跳过 fly-sim-core 慢测）
 #
 # 基线（2026-09-24 实测，出处 c1-migration-plan §5.127 终验）：
-#   flyctrl-core  117/0（4 ignored，~1s；lib 93 + 集成 24）
+#   flyctrl-core  120/0（4 ignored，~1s；lib 93 + 集成 27；§5.131 +3：eskf_hover_outlier 复现测试）
 #   fly-sim-core  176/0（2 ignored，~7min；att_est 271s + pos_ctrl 103s 是大头）
 #   sensor_fault    6/0（~1s，verify.sh SIL 项同源）
 # 增/删测试后：更新此基线 + docs/h-field.md 基线表，并附一句原因与日期。
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-BASE_FLYCTRL_CORE=117
+BASE_FLYCTRL_CORE=120
 BASE_FLY_SIM_CORE=176
 BASE_SENSOR_FAULT=6
 
