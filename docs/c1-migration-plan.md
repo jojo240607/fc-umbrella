@@ -4682,3 +4682,20 @@ joc-base 09-19 c0c9697 起 RTOS_ABI_VERSION=2（rtos_sleep_until_abs），drvtes
    复跑）、hover_env/noise ✓、env smoke/rc/rate/noise/faults/motion/longrun 全部
    基线内 ✓、real_sensors/unlock/fault_injection/vperiph/task_stall ✓
 ```
+
+**§5.131 补遗 4：限幅合入尝试受挫 ⇒ 回退，hover_demo 维持在案（修复方案留档）✓（2026-09-24 深夜）**
+```
+尝试 ✓：限幅（变体 A cap=1e-2）合入后 M 场验证全绿（hover_demo 450s ✓ + 家族基线内 ✓）
+受挫 ✗：H 场 fly-sim-core 三项整定验收表连红（eskf_final_tuning A7 劣化 38.6→56.3 /
+   reanchor_quiet A2 +2.07°超容差 / freq_response）——整定表钉死在【含缺陷的现行滤波
+   工作点】，限幅的任何变体都会移动锚点（近 1g 门控修复 A7 后又暴露 freq_response）
+回退 ✓：eskf.rs 还原原版（H 场 120+6+176 全绿复验 ✓）；longrun 阈值还原 0.5；
+   real 固件重建回原版 ESKF；hover_demo 回到在案失败（预期，确定性复现）
+留档 ✓：修复代码方案（变体 A + 近 1g 门控）与复现测试（eskf_hover_outlier.rs，3 用例，
+   现状全绿=记录现状）完整保留在 flyctrl 工作区提交与本文档
+⇒ 下一步（flyctrl-core 滤波器整定专项会话）：以 att_est.rs 验收表为准绳重调——
+   验收表本身钉死在缺陷工作点是认知偏差（"整定验收=固化现状"），需先厘清
+   A7/reanchor/freq_response 三表的物理意图，再给限幅定参（预计 σ/cap/门控三参数
+   小空间搜索），过表后合入限幅 ⇒ hover_demo 转绿
+教训 ✓：跨 H/M 两场的滤波器行为改动必须走【验收表重整定】流程，不是单点修补；
+   深夜不宜做滤波器整定（多次变体迭代需清醒判读 RMSE 表）✓
