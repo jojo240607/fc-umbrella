@@ -4855,3 +4855,38 @@ PC/SIL 默认值不变 ⇒ fly-sim-core att_est 三表 63/0 保持全绿 ✓（�
   观测噪声按路径配置（H 场 120 + 63 全绿）；临时诊断已清除（含曾破坏 diag 测试的
   逐拍采样 ✓ 已恢复验证）
 ```
+
+**§5.136 M 场 demo 双问题定位（水平漂移 + SysTick 处理器故障）✓（2026-09-25）**
+```
+诊断方法沉淀 ✓：轻量固件探针（每拍 7 float：DBG_GPS pos/vel + baro）——远轻于此前 30+ 的
+   探针，避免负载干扰；测试侧读 EST_STATE 对照。故障现场捕获：run 失败时读 PC/LR/SP/R0-3/IPSR
+   ⇒ addr2line 反查。
+
+★问题 A：水平漂移 ~8m（垂直 ✓ 姿态 ✓）——链路实际健康，属环路/参考问题 ✓
+   实测（step 14500）：gps_pos=(-8.71,4.36,2.50) est_pos=(-8.62,4.54,2.48) ⇒ **估计器精确
+   跟随 GPS**，GPS/气压均在流动，**非量测缺失** ✓；模式经查 = rc_ch[5]=1500 ⇒ mode=2 ⇒
+   **LOITER（定点，位置环启用）** ✓；setpoint pos=(0,0,hold_alt) 原点 ✓
+   行为特征：前 50s 在 ±3m 极限环（GPS 位置量化 ~0.7m 驱动，NMEA 1e-4min 分辨率），
+   50s 后单调漂走；末态 est vel ≈ -1.2 m/s 持续而位置环未纠 ⇒ 环路阻尼/参考失配
+   待办：① 位置环增益/阻尼复核（sustained 1.2m/s 未纠 = 速度环未起作用？）
+        ② GPS 量化效应（把位置量测先平滑/降频，或按量化匹配 R——但 R=1.0 试验触发问题 B）
+        ③ 逐拍记录控制器侧（期望速度/倾角指令）与估计对照，定位环路断点
+★问题 B：SysTick 处理器首条指令读 SCB ICSR ⇒ 被报 READ_UNMAPPED（该 build 在 step 1546
+   确定性停死；此前同源固件可跑 400s ⇒ **二进制布局敏感**）✓
+   证据链：PC=0x0800D6D2 = jOS `IRQ_CommonHandler` 首条 `ldr r0,[0xE000ED04]`（ICSR 读）；
+   LR=0xFFFFFFED（EXC_RETURN）；SP=0x1000FFD8（CCM 顶 = MSP）；**故障时刻实测所有页可读**
+   （0xE000E000/E000ED04/E000E010/FLASH/SRAM/CCM 全 OK）⇒ **不是页缺失，是某 hook 阻断了
+   该次访问**（hook 返回 true 时 Unicorn 对读即报 READ_UNMAPPED）⇒ 嫌疑：取指路径的
+   MPU XN/AP 检查（固件 MPU 区域覆盖随二进制位移 ⇒ 解释布局敏感）
+   已做 ✓：SCB MMIO hook 的 PPB MPU 检查已去掉（ARMv7-M：PPB 不受 MPU 数据检查，架构正确；
+   m2_mpu/m4_mpu 测试 4/0 + 2/0 全绿 ✓）——但**故障仍现** ⇒ 真正的阻断点在别处（疑 code hook
+   的 XN 判定/中断投递 hook），待办：给 code hook 加访问地址日志（临时）定位阻断源
+```
+
+**§5.136 遗留清单（下一轮）** ✓
+```
+① 定位 ReadUnmapped 阻断源：hook 逐条日志（code hook XN 判定 / 中断投递 hook / 数据 hook）
+② 问题 A 环路定位：控制器侧逐拍量（期望速度/倾角）与估计对照；必要性与 GPS 量化对策
+③ §5.135 控制拍负载（x_task_stall 饥饿，需降负而非改断言）
+④ 上述闭合后：M 场全量重跑 + 基线表更新（integrate.sh 的 real 族数字可能整体位移）
+```
