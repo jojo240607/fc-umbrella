@@ -4839,3 +4839,19 @@ PC/SIL 默认值不变 ⇒ fly-sim-core att_est 三表 63/0 保持全绿 ✓（�
 自造并已清除的干扰 ✓：ESKF_DIAG 逐拍采样改动曾破坏 eskf_diag_snapshot_from_firmware ✗
       ⇒ 临时诊断已全部清除（逐拍 slot3 采样 / mirror_rej / 磁与 acc 镜像 / ESKF_PDIAG）✓
 ```
+
+**§5.132 补遗：修复后的三项残余 + 栈越界崩溃线索（2026-09-25）✓**
+```
+残余（同一类：诚实估计器下暴露的悬停环质量问题 ⇒ 下一专项=控制环整定）✓
+  · x_env_longrun::long_hover_bounded_and_alive ✗ max_vel=4.26（界 1.5）
+  · x_env_noise_perturb::noise_robust_hover    ✗ max_vel=3.46（界 1.0）
+  · x_hover_demo ✗ 垂直环稳态误差 ~4.7m（P 增益/悬停油门基线与实机不匹配；推力有裕度非饱和）
+  · x_hover_env ✗ **UC_ERR_READ_UNMAPPED（固件崩溃，~75s）**
+机制（demo 实测）✓：修复前 est 冻结 ⇒ 位置/高度"零漂移"假象通过；修复后 est 诚实 ⇒
+  真实稳态误差/漂移暴露 ⇒ 教训：**估计器故障会伪装成控制通过** ✓
+崩溃线索 ✓：SP 采样见 0x1000FFD8（**CCM RAM，仿真未映射**）⇒ 疑栈指针越界
+  （旁证：此前给控制任务加 9 个 float 静态写即 6s 崩；RTOS 多任务 SP 采样有歧义
+   ⇒ 需用 RTOS 栈水位工具定论）。修复清单落地 ✓：磁力计换算 + GPS 垂直不融合 +
+  观测噪声按路径配置（H 场 120 + 63 全绿）；临时诊断已清除（含曾破坏 diag 测试的
+  逐拍采样 ✓ 已恢复验证）
+```
