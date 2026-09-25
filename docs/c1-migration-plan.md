@@ -5133,3 +5133,43 @@ PC/SIL 默认值不变 ⇒ fly-sim-core att_est 三表 63/0 保持全绿 ✓（�
 ③ §5.135 控制拍负载（x_task_stall 饥饿）
 ④ 全量 M 场重跑 + 基线表更新（本轮改动多）
 ```
+
+**§5.136 补遗 9：SIL ↔ M 场差异收敛到"传输/时序" + PHY 引擎测试推进计划 ✓✓（2026-09-25）**
+```
+逐一排除（本轮全部实证）✓：
+   · plant/世界：**同源** —— SIL（fly-sim-core/tests/sil.rs `PhySdkWorld::create_empty()`）
+     与 demo（`SimLoop::new(PhySdkWorld::create_empty(), …)`）**同一 QuadrotorPlant 实现**
+     （plant.rs：叶素 BET + 电机一阶滞后 τ=0.05 + 电池掉压 + 下洗耦合）✓
+   · 参数：`VehicleConfig`（flyctrl-core 共享）质量 2.4kg/惯量/τ/thrust_coeff 全同 ✓
+   · 引擎休眠：**已显式关闭**（`sleep_time = ∞`，附踩坑注释）✓
+   · 控制/估计/滤波：SIL 走**同一个** `flyctrl_core::hil::HilContext::step_hil`
+     （同陷波/低通、同 ESKF、同 PidController 增益）✓
+   ⇒ 唯一剩余差异 = **M 场特有的传输链与时序**：vperiph→驱动（BMI088 换算等）→
+     500Hz 传感器任务 → 帧交接（seqlock，允许撕裂）→ 250Hz 控制读 → 模拟 MCU 执行节拍
+   （注：探针所见"成对相同陀螺样本"经分析为**测试注入节奏**产物——真值每 4ms 更新、
+      任务 2ms 采样 ⇒ 控制每拍仍拿到"新"样本 ⇒ 该嫌疑已减弱 ✓）
+
+★PHY 引擎测试推进计划（用户指示）✓：
+   现状覆盖：M 场 82 目标中**仅 x_hover_demo 使用全物理引擎**（真实转动动力学）；
+   env 家族（smoke/rc/faults/noise_perturb/motion/longrun）为**脚本化运动学**
+   ⇒ 姿态环×真实转动动力学**只在 demo 覆盖**（这正是俯仰极限环长期未被发现的原因）✓
+   推进路线（按性价比排序）✓：
+     ① **PHY 冒烟**（新）：以 demo 的 PHY 装置最小化版做「解锁→离台→悬停 10s」，
+        断言姿态/高度有界——作为 PHY 路径的**守门测试**（当前预期暴露裕度问题，
+        按在案登记 + 基线，驱动后续整定）✓
+     ② **PHY 化 env 家族**（中期）：EnvHarness 的 `scn.advance(运动学)` 换成
+        `SimLoop::step_hil(真实刚体)`——需保留现有断言口径（位置/姿态/高度界）；
+        建议逐目标迁移（每迁一个即跑全家族对照）✓
+     ③ **PHY 故障注入**：x_env_faults 的传感器故障场景在真动力学下复验（现为运动学）✓
+   注意 ✓：PHY 化后**基线会整体位移**（真动力学更苛刻）⇒ 每次迁移按 §5.38 纪律
+     重测基线并同步 integrate.sh/h-field.md ✓
+```
+
+**§5.136 遗留（最新）** ✓
+```
+① 姿态环裕度（PHY plant × 固件环）：下一步 A/B 传输链要素——(a) 关陷波/低通对照、
+   (b) 传感器任务节拍 2ms→4ms 对照、(c) 帧交接改双缓冲（补遗 5）后复跑 demo
+② PHY 引擎测试推进（补遗 9 的 ①→②→③）
+③ §5.135 控制拍负载（x_task_stall 饥饿）
+④ 全量 M 场重跑 + 基线表更新
+```
