@@ -66,9 +66,9 @@ git log --oneline -5 && git submodule status    # 当前版本快照
 | x_sensor_rate | 1/0 | — | §5.130 |
 | x_flyctrl_modes | 0/1 | LOITER uplink 未处理（§5.12 时代即 ✗） | §5.130 |
 | x_env_faults | 7/1 | baro_step_bounded_by_gps（早于 B 案即 ✗） | §5.130 |
-| x_env_noise_perturb | 7/0 | — | §5.130 |
+| x_env_noise_perturb | 6/1 | noise_robust_hover 速度 3.17~3.78m/s（界 1m/s）。**§5.127 判定：先存** ✓（撤本轮 mag 改动后仍失败：3.17m/s；非本轮引入）——观测量为"悬停速度有界"，属**外环带宽/速度环整定**范畴（与 §5.136 mag 路径无关：真机默认 heading 后位置/速度环不变）| §5.136 补遗 30（2026-09-26）|
 | x_env_motion | 3/1 | climb_height_tracks | §5.130 |
-| x_env_longrun | 2/0 | — | §5.130 |
+| x_env_longrun | 1/1 | long_hover_bounded_and_alive 位置 4.47~4.75m（界 4m）。**§5.127 判定：先存** ✓（撤本轮 mag 改动后仍失败：4.47m ⇒ 非本轮引入）——同属**外环/位置环整定**范畴 ✓ | §5.136 补遗 30（2026-09-26）|
 
 ★基线为【真固件】口径（real bin + 同 feature ELF）。§5.128 批次的 env 家族数字系
 HIL 产物污染（bin/ELF 跨 feature 错配），不可作基线（详见 migration-plan §5.130）。

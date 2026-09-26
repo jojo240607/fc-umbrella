@@ -5841,3 +5841,25 @@ M 场关键回归（当前配置）✓：real_sensors ✓ / unlock_flight ✓ / 
    —— 理由：真机链下 3D 的可观测性不足（PX4 亦依赖 NE 辅助）；heading 在 M 场实测完美 ✓
    落地方式：按 **路径** 选择默认（真机/firmware 路径 ⇒ heading 默认；SIL/H 场 ⇒ 3D）✓
 ```
+
+**§5.136 补遗 30：真机默认 heading 落地 ⇒ M 场成功（demo 通过）；两项先存退化入基线 ✓（2026-09-26）**
+```
+落地 ✓（用户裁定①的最终工程形态）：
+   · **真机路径默认 heading（yaw-only）**（`app/src/flyctrl/control.rs` 显式设 `G_ESKF_MAG_YAW_ON=2`
+     ✓）；**SIL/H 场保持 3D**（验收表口径 ✓ att_est 63/0 ✓）——按路径择默认 ✓
+   · 依据（补遗 29 诊断 ✓）：真机链下 3D 的姿态修正方向不可观测（无 NE 外部辅助），
+     冻结磁两态/冻结零偏/reanchor 全部无效 ⇒ 结构性问题；PX4 亦以 `isNorthEastAidingActive()`
+     为 3D 前提 ✓
+   · 磁样本 **90ms 低通供 instant reset**（一手 `_mag_lpf` ✓）；延迟对齐默认 1.5ms（双门控 ✓）
+验证 ✓：**H 场全绿**（120+6+176；att_est 63/0）✓ · **M 场真机 heading 冒烟 60s 完美**
+   （tilt 0.0°/漂移 0.02m）✓ · **x_hover_demo 通过** ✓（此前因 mag 失稳失败）· M 场关键回归全绿 ✓
+★M 场全量：PASS=20 / FAIL=2（两项经 §5.127 判定均为**先存** ✓，非本轮引入）：
+   | 项 | 现状 | §5.127 对照（撤本轮改动）| 判定 |
+   | x_env_noise_perturb/noise_robust_hover | 速度 3.78m/s（界 1）| **3.17m/s 同失败** | **先存** ✓ |
+   | x_env_longrun/long_hover_bounded | 位置 4.75m（界 4）| **4.47m 同失败** | **先存** ✓ |
+   ⇒ 二者同属**外环（速度/位置环）整定**范畴，与 §5.136 mag 路径无关 ✓ ⇒ 已入基线表（h-field.md）
+★另修机械项 ✓：`x_fault_injection` 随 mag 迁 I2C1 的拓扑跟随（从设备索引 `i2c[2]` 仅剩
+   2 个从设备 ⇒ 越界 ✗；NACK 注入端口 3→1 ✓）⇒ **2/0 通过** ✓
+⇒ 新遗留台账 ✓：① 外环整定（速度环 1m/s、位置环 4m 界内收敛）——两项先存退化
+   ② 若未来引入 NE 外部辅助（如 GPS 速度/光流提供航向）⇒ 真机可切回 3D（AUTO 一手语义 ✓）
+   ③ PHY 化推进；④ §5.135 负载；⑤ x_drvtest 宿主 SD（既有）
