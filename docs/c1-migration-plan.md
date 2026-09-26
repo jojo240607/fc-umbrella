@@ -5600,3 +5600,48 @@ A/B（同一固件、同一装置，唯一变量 = 是否注入 PHY 世界场为
 ② 外环整定（收敛偏慢）③ PHY 化推进 + 接入 integrate.sh
 ④ §5.135 控制拍负载；⑤ x_drvtest 宿主 SD 校验（既有）；⑥ 全量 M 场重跑 + 基线表更新
 ```
+
+**§5.136 补遗 23：★★★PX4 机制以【一手源码】核实 + 磁更新的两处致命缺陷修复 ✓✓✓（2026-09-26 晨）**
+```
+★用户前提（正确）✓：不得靠记忆断言 PX4 机制 ⇒ 本轮**取一手依据**（raw.githubusercontent 可
+   达，git clone TLS 不通）：
+   · `EKF2_HEAD_NOISE`（module.yaml）："Measurement noise for **magnetic heading fusion**"，
+     单位 rad、默认 0.3 ✓
+   · `EKF/common.h`（EKF 主体参数，一手）：
+     - mag_hdg / **mag_3D** / mag_dec 三种融合模式（`mag_type` 默认 0=auto）✓
+     - `ekf2_mag_acclim=0.5`："in auto select mode, **heading fusion will be used when
+       manoeuvre accel is lower than this**" ⇒ **低机动=航向融合、高机动=3D 矢量融合** ✓
+     - `ekf2_mag_noise=5e-2 G`、`ekf2_mag_gate=3.0 SD`、`ekf2_mag_e_noise/b_noise`、
+       `ekf2_mag_delay`（磁延迟补偿）、`synt_mag_z`（合成 Z 观测）✓
+     - **磁干扰检测**：`ekf2_mag_check` + `chk_str=0.2`（强度）+ `chk_inc=20°`（倾角）
+       + 状态位 `mag_field_disturbed` ✓
+   · `EKF/aid_sources/magnetometer/mag_fusion.cpp`（一手实现）：
+     - `innovation = quat_nominal.rotateVectorInverse(mag_I) + mag_B − mag`（3D 融合 ✓）
+     - **航向修正限速**："limit total heading change rate to prevent rapid wrong
+       convergence when heading variance is high"；`delta_heading_max = radians(1°)·dt_heading`
+       （dt∈[1e-4,0.2]s），超限 `Kfusion *= delta_heading_max/|delta_heading|` ✓
+     - `fuseDeclination()`：磁偏角作为观测量 ✓
+   · `EKF/ekf_helper.cpp::fuse()`（一手）：姿态注入 `AxisAngle(K·(-1·innovation))` **左乘**
+     ⇒ 等效按 **meas − pred** 旋转 ✓（符号的一手判据 ✓）
+★更正此前转述 ✗：本仓注释曾称"PX4 只用磁约束 yaw"——不准确 ✓ PX4 是 **auto（低机动航向 /
+   高机动 3D）+ 干扰检查 + 延迟补偿 + 航向限速** ✓
+★★本轮修复（两处致命缺陷，均由单测方向可鉴别地抓出 ✓）：
+   ① **恒等退化** ✗✗：初版 yaw-only 用【估计姿态】把实测场转回导航系再与固定 mag_I 比
+      ⇒ `m_n ≡ mag_I` 恒等 ⇒ **新息恒 0、磁更新完全失效且不可察觉**
+      ⇒ 改为 PX4 式：`pred = R(q_est)ᵀ·mag_I + mag_B` vs 实测机体场 ✓
+   ② **符号** ✗：按 PX4 一手（innovation=pred−meas + fuse() 带负号左乘）⇒ 等效 meas−pred ✓
+      （此前凭推理取反 ⇒ 实测姿态反向失控 −31.7° ✓）
+   ③ 顺带落地 PX4 一手机制：**航向修正速率限幅 ≈1°/s** ✓
+★验证 ✓：单测 3 例（漂移 ±2°/±5° 被拉回 0.00~0.01°；对准后 ±8°/±20° 失配 est yaw 0.00°；
+   未对准例作"新息非退化"回归防护）、flyctrl-core ✓、**att_est 63/0** ✓、**H 场全绿** ✓、
+   **PHY 冒烟 40s 完美（0.0°/0.01m）** ✓
+残余 ✓：demo 60s 后段（>35s）仍发散（前两窗 3.06m / 2.79m 收敛 ✓）⇒ 与分总线后同一模式
+⇒ 下一步：PX4 一手机制中的**磁延迟补偿（ekf2_mag_delay）**与**干扰检查（强度0.2G/倾角20°）**
+   尚未落地 ⇒ 按一手实现继续对齐 ✓
+```
+
+**§5.136 遗留（最新）** ✓
+```
+① 磁延迟补偿 + 磁干扰检查（PX4 一手两项未落地）⇒ demo 后段发散
+② 外环整定；③ PHY 化推进；④ §5.135 负载；⑤ x_drvtest 宿主 SD（既有）；⑥ 全量 M 场重跑+基线
+```
