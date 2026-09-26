@@ -5645,3 +5645,35 @@ A/B（同一固件、同一装置，唯一变量 = 是否注入 PHY 世界场为
 ① 磁延迟补偿 + 磁干扰检查（PX4 一手两项未落地）⇒ demo 后段发散
 ② 外环整定；③ PHY 化推进；④ §5.135 负载；⑤ x_drvtest 宿主 SD（既有）；⑥ 全量 M 场重跑+基线
 ```
+
+**§5.136 补遗 24：全面对标 PX4 的 mag 处理（否决"仅 yaw"）+ 落地干扰检测 ✓✓（2026-09-26）**
+```
+用户裁定（正确）✓：**否决"只用磁处理 yaw"** —— 该结论基于我对 PX4 的错误认知（把
+   `MagFuseType::HEADING` 当成 PX4 的做法）；一手依据：`common.h` 中 HEADING 只是
+   {AUTO, HEADING, NONE, INIT} 之一，**默认 AUTO** ✓
+一手依据汇总（源码核实 ✓ 非记忆）：
+   · `module.yaml`：EKF2_HEAD_NOISE = "Measurement noise for **magnetic heading fusion**"
+   · `common.h`：MagFuseType{AUTO=0,HEADING=1,NONE=5,INIT=6}；`ekf2_mag_acclim=0.5`
+     （AUTO 下低机动用 heading）；`mag_noise=5e-2G`、`mag_gate=3.0SD`、`mag_delay`、
+     `chk_str=0.2`(WMM 口径)/0.40(无 WMM)、`chk_inc=20°`；状态位 `mag_field_disturbed` ✓
+   · `mag_fusion.cpp`：3D 融合 `innovation=R(q)ᵀ·mag_I+mag_B−mag`；**航向修正限速 1°/s·dt**
+   · `mag_control.cpp`：AUTO 选择（`mag_3D` 需 `mag_aligned_in_flight`，否则 `mag_hdg`）；
+     3D 且无 NE 辅助时**必须融磁偏角**；`checkMagField()` 强度+倾角检测 ⇒ 拒融合 ✓
+   · `ekf_helper.cpp::fuse()`：姿态注入 `AxisAngle(K·(−1·innovation))` 左乘 ⇒ 等效 meas−pred ✓
+本仓落地（本轮）✓：① 修正恒等退化+符号（补遗 23）② 航向修正限速 1°/s ③ **磁干扰检测
+   （强度 0.45±0.40G + 倾角 ≤20°，期望倾角取对准后的 mag_I = PX4 WMM 同源）+ 拒融合 + 状态位** ✓
+验证 ✓：单测 4 例（含干扰三态：正常通过/强度拒/倾角拒/恢复 ✓ 阈值与一手一致）、
+   flyctrl-core ✓、att_est 63/0 ✓、H 场全绿 ✓
+★状态转折 ✓：demo **姿态不再被踢**（末态 −1.2°/1.9°，此前翻滚/贴轨 ✗）⇒ 残余收敛为
+   **位置/速度通道漂移**（姿态平稳而横向漂移 −28m）⇒ 与补遗 10/20 的"外环/速度估计"
+   同一方向 ✓
+未落地（PX4 一手清单）✓：磁延迟补偿（`ekf2_mag_delay`）、AUTO 模式切换（3D↔heading）、
+   磁偏角融合（`mag_dec`）、`mag_aligned_in_flight` 语义 ⇒ 按需继续对齐
+```
+
+**§5.136 遗留（最新）** ✓
+```
+① 位置/速度通道漂移（姿态已稳 ⇒ 外环/速度估计）——当前主攻
+② PX4 一手未落地项：磁延迟补偿 / AUTO 切换 / 磁偏角融合
+③ 外环整定；④ PHY 化推进；⑤ §5.135 负载；⑥ x_drvtest 宿主 SD（既有）；⑦ 全量 M 场重跑+基线
+```
