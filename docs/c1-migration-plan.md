@@ -6075,3 +6075,29 @@ M 场关键回归（当前配置）✓：real_sensors ✓ / unlock_flight ✓ / 
 ⇒ 遗留台账更新 ✓：①**关闭**（结论：不改，理由与实测见上）· ②位置环带宽（水平 1.0m 稳态偏置，
    属性能优化）· ③PHY 化推进 · ④§5.135 负载 · ⑤x_drvtest 宿主 SD
 ```
+
+**§5.143：★PHY 化推进——基础设施 + 两个迁移目标全绿 ✓✓（2026-09-27）**
+```
+背景（§5.136 补遗 9 的 ②）：env 家族现用 `scn.advance(运动学)` 直接指定真值运动；
+PHY 化 = 换成 `SimLoop::step_hil(真实刚体)`，使**控制↔动力学闭环**参与（更苛刻 ✓），
+断言口径（位置/姿态/高度界 + 健康）保持不变 ✓
+落地 ✓：
+  · `tests/common/mod.rs`：新增 `PhyBackend` trait（`step_plant` + `disturb_torque`）与
+    `EnvHarness.phy: Option<Box<dyn PhyBackend>>`；`step()` 在有后端时走**真动力学** ✓
+  · `tests/common/phy_backend.rs`：`PhyBackendImpl` —— 读固件 PWM（TIM3/2/5/4 ✓）→
+    `step_hil` 驱动刚体 → 回写 `att`/`imu_acc`/`imu_gyr`/`mag`(物理世界场 ✓)/
+    `gps_*(经纬高+速度)`/`baro_pa` 到 `FlySimState` ✓；摇杆通道**一次性初始化中位**
+    （1500 ✓ 不每步覆盖 ⇒ 测试可设摇杆 ✓）
+  · `tests/flight_real/x_phy_env_smoke.rs`：**两个迁移目标** ✓
+验证 ✓（真动力学，全部实测）：
+  | 目标 | 结果 |
+  | 悬停（15s）| `max_pos=1.32m max_tilt=0.0° health=0` ✓✓ |
+  | 抗扰（20s，t=5/10s 力矩脉冲 0.6 N·m·s ✓）| `peak_tilt=1.5° 末态=0.08° health=0` ✓✓ |
+  | `x_phy_env_smoke` | **2/2 全绿** ✓ |
+  | **H 场** | **全绿** ✓ |
+★发现（有价值 ✓）：摇杆机动需 **MAVLink RC override**（固件经 `rc_ov` 取摇杆 ✓，
+  `app/src/flyctrl/control.rs:252` 通道映射 ch1=roll/ch2=pitch/ch3=throttle/ch4=yaw ✓），
+  而**不是**虚拟外设 `FlySimState.rc_ch` ✗ ⇒ 该迁移需另立基础设施目标 ✓（已入台账）
+⇒ 后续 ✓：逐目标迁移（motion 摇杆版 / faults / longrun / noise ✓），每次迁移按 §5.38
+  重测基线并同步 `integrate.sh` / `docs/h-field.md`（真动力学更苛刻 ⇒ 基线整体位移 ✓）
+```
