@@ -6122,3 +6122,33 @@ PHY 化 = 换成 `SimLoop::step_hil(真实刚体)`，使**控制↔动力学闭�
 状态 ✓：测试 `phy_rc_forward_moves_north` **#[ignore] 登记待办**（注释含全部线索 ✓）
 ⇒ 台账 ✓：③ PHY 化（**motion 摇杆通路**待打通 → 之后 faults/longrun/noise ✓）
 ```
+
+**§5.145：★PHY 化迁移③打通——摇杆机动（4 个机械性 bug 定位并修复）✓✓（2026-09-27）**
+```
+症状：注入 RC override 后北向速度恒 0 ✗；探针（`DBG_RC` ✓）逐步定位 4 个机械性问题：
+ ① **符号未导出**：固件 `G_RC_OVERRIDE`/`_VALID`/`_TICK` 不在 ELF 符号表 ⇒ 测试无法注入 ✗
+    ⇒ 加 `#[no_mangle] + #[used]`（`uplink.rs` ✓，语义不变 ✓）
+ ② **写入时机**：override 在控制拍**之后**写 ⇒ 固件读到上一拍（首拍为 0 ✗）
+    ⇒ 新增 `PhyBackend::pre_tick`，在控制拍**之前**写 ✓
+ ③ **模式开关被改写**（关键 ✓）：`rc_ch[5]` 模式开关被固件/虚拟外设持续改写 ⇒
+    拍后写**无效** ⇒ 档位掉到 **0=STABILIZE** ⇒ 位置环旁路 ⇒ 摇杆只当姿态指令 ✗
+    （实测 `rc_ch[5]=500 ⇒ 档 0 ⇒ cmd_mode=0` ✓）
+    ⇒ 新增 `PhyBackend::pre_tick_state`，**每拍读取前**写 `rc_ch[4]=2000`/`rc_ch[5]=2000` ✓
+ ④ **解锁被误判**：`RcInput.armed` 原用 `rc_ov[0] > 1500` ⇒ 摇杆中位 1500 时**误判失锁** ✗
+    ⇒ 改为**继承 RC 链路**的 `rc.armed` ✓（override 只覆盖摇杆 4 通道 ⇒ 合 MAVLink 语义 ✓）
+打通证据（探针实测 ✓✓）：`armed=1 fresh=1 mode档=2 cmd_mode=5(LOITER) thr=0.50 pitch=0.60
+  roll=0.50` ✓、`est vel=(-1.21,-0.25,-0.20)`（有响应 ✓）
+验证 ✓（真动力学）：
+  | 目标 | 结果 |
+  | **摇杆机动**（20s，ch2 前推 1600 ✓）| `max_hspeed=1.65m/s` 末水平位移 **15.93m** `health=0` ✓✓ |
+  | 悬停（15s）| `max_tilt=0.0°` ✓ |
+  | 抗扰（20s 力矩脉冲）| `peak_tilt=1.5°` 末态 0.08° ✓ |
+  | `x_phy_env_smoke` | **3/3 全绿** ✓✓ |
+  | M 场关键回归（real_sensors/unlock/env_smoke）| 全绿 ✓ |
+  | `x_hover_demo` | 通过 ✓ |
+  | **H 场** | **全绿** ✓ |
+入台账 ✓：摇杆**方向/量级待校准** —— 固件 `vx = rc.pitch * LOITER_NUDGE_GAIN` **未做中位
+  归零**（`norm(1500)=0.5` 而非 0 ✗）⇒ 摇杆量被放大（实测南向且速度偏高 ✓）；属固件侧
+  小项（不影响本迁移目标 ✓）
+⇒ 后续 ✓：③ 继续迁移 faults/longrun/noise ✓；摇杆中位归零（固件侧小修 ✓）
+```
