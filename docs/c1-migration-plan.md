@@ -6019,3 +6019,35 @@ M 场关键回归（当前配置）✓：real_sensors ✓ / unlock_flight ✓ / 
 新增诊断旋钮（默认关/0/-1 ⇒ 逐位不变 ✓）：`G_ATT_KP`·`G_ATT_KD`（pid.rs）·`G_ESKF_GATE`·
   `G_ESKF_MAG_PRE_LPF_MS`·`G_ESKF_MAG_PERIOD`·`G_ESKF_R_MAG_K`·`PHY_STATIC`·`PHY_NO_LOITER`·`PHY_VAR_FLOOR`
 ```
+
+**§5.141：★★ 真机 3D 问题**彻底解决**——一手 `isNorthEastAidingActive` 精读更正 ⇒ AUTO + 航向一致性门控 ✓✓（2026-09-27）**
+```
+★一手精读更正（关键 ✓✓）：`isNorthEastAidingActive()` 的**一手定义**在
+  `EstimatorInterface`（`src/modules/ekf2/EKF/estimator_interface.cpp` ✓，此前在 ekf.h/mag_control.cpp
+  里找不到、误判为"本仓无 NE 辅助" ✗）：
+     return _control_status.flags.gnss_pos || _control_status.flags.gnss_vel
+            || _control_status.flags.aux_gpos
+            || (_control_status.flags.ev_pos && ev_pos_ned)
+            || (_control_status.flags.ev_vel && ev_vel_ned);
+  ⇒ **本仓有 GPS 位置 + 速度融合 ⇒ `gnss_pos`/`gnss_vel` 成立 ⇒ 该条件为 TRUE** ✓✓
+⇒ 一手语义（`mag_control.cpp:502-511` ✓）下，`mag_heading_consistent` 必须三项同时成立：
+    ①`|航向新息低通| < head_noise(0.3rad)` ②`|瞬时新息| < 0.3rad`
+    ③**`isNorthEastAidingActive() ∧ _accel_horiz_lpf > mag_acclim(0.5 m/s²)`** ✓
+  ⇒ **悬停时水平加速度 ≈ 0 ⇒ consistent = false ⇒ 3D 不可用 ⇒ 自动回退 heading** ✓✓
+★结论：本仓此前在**悬停**启用 3D = **违背一手** ✗（在不该用 3D 的时段用了 3D）⇒ 这正是
+  "悬停 3D 自激（俯仰 ≈4Hz）"的根因 ✓✓ —— 与 §5.139/§5.140 的"隔离闭环稳定、姿态环增益
+  单调相关、观测侧调参无效"全部自洽 ✓（因为问题从来不是滤波器，而是**启用时机**）✓
+落地（严格一手 ✓）：
+  · `accel_horiz_lpf`（1s 一阶低通，一手 `_kAccelHorizLpfTimeConstant` ✓）每拍维护 ✓
+  · `mag_heading_consistent` = ①∧②∧③（含 `isNorthEastAidingActive` 恒真 ✓）
+  · **真机恢复 AUTO**（`G_ESKF_MAG_YAW_ON=0`）+ 门控开（`G_ESKF_MAG_HDG_GATE=2`）✓
+验证（全部实测 ✓✓）：
+  | 场景 | 结果 |
+  | 真机悬停（水平加速度≈0 ⇒ heading）| **60s tilt 0.0° / 漂移 0.03m** ✓✓ |
+  | `x_env_motion`（**巡航 3m/s / 转弯** ⇒ 机动 ⇒ 门控开门 ⇒ **3D 启用**）| **4/4 全绿** ✓✓ |
+  | `x_hover_demo` | **通过** ✓ |
+  | M 场关键回归（real_sensors/unlock/sensor_rate/env_smoke）| 全绿 ✓ |
+  | **H 场** | **全绿**（att_est 63/0 ✓；门控默认关 ⇒ 默认路径逐位不变 ✓）|
+⇒ 意义 ✓：真机**不再需要"强制 heading"的回退**（此前为绕开自激而设 ✗）⇒ 回归 PX4 一手
+  AUTO 语义：**机动时 3D、悬停/低速时 heading**，两者自动切换 ✓✓
+```
