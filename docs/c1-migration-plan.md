@@ -5863,3 +5863,36 @@ M 场关键回归（当前配置）✓：real_sensors ✓ / unlock_flight ✓ / 
 ⇒ 新遗留台账 ✓：① 外环整定（速度环 1m/s、位置环 4m 界内收敛）——两项先存退化
    ② 若未来引入 NE 外部辅助（如 GPS 速度/光流提供航向）⇒ 真机可切回 3D（AUTO 一手语义 ✓）
    ③ PHY 化推进；④ §5.135 负载；⑤ x_drvtest 宿主 SD（既有）
+
+**§5.138：② NE 辅助方向——真机 3D 失稳的 9 项排除清单 + 最小复现路线（2026-09-27）**
+```
+一手依据 ✓（`mag_control.cpp:178-200`）：
+  · `no_ne_aiding_or_not_moving = !isNorthEastAidingActive() || vehicle_at_rest`
+  · `mag_consistent_or_no_ne_aiding = mag_heading_consistent || !isNorthEastAidingActive()`
+  · 条件为真时 PX4 周期性/事件性 `resetMagStates(_mag_lpf.getState(), reset_heading)` ✓
+  ⇒ **有 NE 辅助** ⇒ 必须 `mag_heading_consistent`（航向新息小 **且** 机动使航向可观测）；
+     **无/静止** ⇒ 只需 `yaw_align` + 允许重锚 ✓
+落地（默认关 ⇒ 逐位不变 ✓）：`G_ESKF_MAG_RESET_PERIOD`（周期硬重锚，含 `_no_yaw` 变体 ✓）
+   · `G_ESKF_MAG_I_PRIOR_{X,Y,Z}`（先验覆盖，诊断 ✓）
+★真机 3D 排除清单（9 项，全部实测 ✗）：
+   ①陀螺陷波Q ②磁延迟对齐(1.5/4ms) ③角速度/机动双门 ④reanchor ⑤干扰检测(开关)
+   ⑥磁两态更新路径（**冻结实验**：仍发散 81m）⑦周期重锚(10s/1s/0.2s/0.1s)
+   ⑧先验磁场值（改实际物理磁 [0.445,.229,.399] 仍 33.2°）⑨冻结硬铁 mag_B（33.9°）
+   ⇒ **凡涉 mag 状态侧的处理皆无效** ⇒ 成因在"**姿态被 3D 观测修正的方式**"本身 ✓✓
+⇒ 下轮**最小复现**（明确路线 ✓）：仅估计器、无控制回路、纯净磁样本
+   ① PHY 冒烟加"冻结姿态/断开控制"旋钮（或新写 `x_diag_eskf_3d.rs`）：
+      固定姿态序列 + 注入物理磁 ⇒ 观察 `mag_i/att` 是否仍发散；
+      若【冻结控制下不发散】⇒ 是**闭环正反馈**（估计↔控制耦合）；
+      若【也发散】⇒ 是**纯滤波器缺陷**（H/增益/坐标）⇒ 逐位核对 `mag_h(q,mag_i)` 与
+      PX4 `mag_fusion.cpp` 的 `H`（含 `-R(q)ᵀ[mag]ₓ` 与 `R(q)ᵀ` 两项 ✓ 此前只核过前者 ✗）
+   ② 核对 3D 顺序融合（逐分量 + 立即 apply）与 PX4 `fuseMag` 的顺序/符号（一手 ✓）
+   ③ 若确为闭环耦合 ⇒ 按 PX4 用【NE 辅助 + `mag_heading_consistent`】把 3D 限定在
+      "航向可观测"时段（本仓可由 GPS 速度提供水平激励度量 ✓ 已有 `mag_delay_accel_horiz`）
+```
+
+**§5.138 遗留台账** ✓
+```
+① 真机 3D 最小复现 → 纯滤波器 vs 闭环耦合判定（路线已明确 ✓）
+② 外环：位置环带宽（水平 1.0m 稳态偏置的整定，非缺陷）
+③ PHY 化推进；④ §5.135 负载；⑤ x_drvtest 宿主 SD（既有）
+```
