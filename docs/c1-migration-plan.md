@@ -6152,3 +6152,24 @@ PHY 化 = 换成 `SimLoop::step_hil(真实刚体)`，使**控制↔动力学闭�
   小项（不影响本迁移目标 ✓）
 ⇒ 后续 ✓：③ 继续迁移 faults/longrun/noise ✓；摇杆中位归零（固件侧小修 ✓）
 ```
+
+**§5.146：PHY 化迁移④⑤完成（长跑 / 传感器零偏）—— `x_phy_env_smoke` 5/5 全绿 ✓✓（2026-09-27）**
+```
+新增两个迁移目标（真动力学 ✓）：
+ ④ **长跑**（`phy_long_hover_bounded_and_alive`，30s ✓）：口径同
+    `x_env_longrun`（估计有界 + 健康 0 + **`SENSOR_SEQ` 持续推进** ✓）
+    · 实测 ✓：`max_pos=1.33m max_hvel=0.00m/s health=0 SENSOR_SEQ 3868→25256` ✓✓
+      （真动力学长跑**完全稳定**、任务活性正常 ✓）
+ ⑤ **传感器零偏容忍**（`phy_accel_bias_tolerated`，25s ✓）：口径同
+    `x_env_noise_perturb::accel_bias_tolerated`（恒定加计偏置 [0.3,0.2,0.3] ⇒ 有界 + 健康 0）
+    · 实测 ✓：`max_pos=1.33m max_vel=0.60m/s health=0` ✓✓
+      （真闭环下偏置被控制回路放大 ⇒ 比运动学版更苛刻，仍良好容忍 ✓）
+`x_phy_env_smoke` 现状 ✓（**5 个目标全绿**）：
+  | 目标 | 结果 |
+  | 悬停 | tilt 0.0° / pos 1.32m ✓ |
+  | 抗扰（力矩脉冲）| peak 1.5° → 末态 0.08° ✓ |
+  | 摇杆机动（RC override）| 1.65m/s / 15.93m ✓ |
+  | 长跑 30s | pos 1.33m / hvel 0.00 / SEQ 活性 ✓ |
+  | 加计偏置 25s | pos 1.33m / vel 0.60 ✓ |
+H 场 ✓ 全绿；后续 ✓：③ 继续（faults 家族迁移 / gyro-baro 扰动 ✓）、摇杆中位归零（固件小修 ✓）
+```
