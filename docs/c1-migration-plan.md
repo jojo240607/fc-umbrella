@@ -6101,3 +6101,24 @@ PHY 化 = 换成 `SimLoop::step_hil(真实刚体)`，使**控制↔动力学闭�
 ⇒ 后续 ✓：逐目标迁移（motion 摇杆版 / faults / longrun / noise ✓），每次迁移按 §5.38
   重测基线并同步 `integrate.sh` / `docs/h-field.md`（真动力学更苛刻 ⇒ 基线整体位移 ✓）
 ```
+
+**§5.144：PHY 化迁移③（摇杆机动）——基础设施完成；通路待打通（已定位到具体候选）✓（2026-09-27）**
+```
+已完成 ✓：
+ · 固件侧导出 RC override 符号（`app/src/flyctrl/uplink.rs` ✓）：`G_RC_OVERRIDE` /
+   `G_RC_OVERRIDE_VALID` / `G_RC_OVERRIDE_TICK` 加 `#[no_mangle] + #[used]`
+   （此前**不在符号表** ⇒ 测试无法注入 ✗；`#[used]` 保证不被优化掉 ✓，语义不变 ✓）
+   ⇒ 符号确认导出：`2000f000 B G_RC_OVERRIDE` ✓
+ · 后端 `PhyBackendImpl::set_rc_override(Some([ch1..ch4]))` ✓：每步写 PWM µs +
+   用**固件自身的 `G_APP_TICKS`** 刷新 `G_RC_OVERRIDE_TICK`（与固件超时判据 2s 同源 ✓）
+ · `PhyBackend` trait 增加 `disturb_torque`（抗扰场景 ✓，默认 no-op ✓）
+已定位事实（实测 ✓）：
+ · 写入**确认生效**：读回 `override=[1281,1600,1500,1500] valid=1` ✓
+   （ch1 被固件改写 ⇒ **固件确实在处理 override** ✓）
+ · 但 20s 内北向速度恒 0 ✗ ⇒ 通路未打通
+ · 候选（`app/src/flyctrl/control.rs:324-362` 一手 ✓）：模式档位 `rc.mode` 来源、
+   `rc.fresh` 与模式分支（`mode_from_rc_switch` ✓）、LOITER 下
+   `vx = rc.pitch * LOITER_NUDGE_GAIN`（pitch=norm(rc_ov[1])=0.6 ✓ 应非零）
+状态 ✓：测试 `phy_rc_forward_moves_north` **#[ignore] 登记待办**（注释含全部线索 ✓）
+⇒ 台账 ✓：③ PHY 化（**motion 摇杆通路**待打通 → 之后 faults/longrun/noise ✓）
+```
