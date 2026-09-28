@@ -144,6 +144,9 @@ do_fault()    { need_elf || return 0
 #   x_env_faults 7/1（在案先存：baro_step_bounded_by_gps）
 #   x_env_noise_perturb 7/0 · x_env_motion 3/1（在案：climb_height_tracks）
 #   x_env_longrun 2/0
+# ★§5.148 PHY 化家族（真动力学，2026-09-27 实测）：
+#   x_phy_hover_smoke 1/0（PHY 路径守门 ✓）
+#   x_phy_env_smoke 6/0（悬停/抗扰/加计+陀螺零偏/摇杆机动/长跑 ✓）
 # 增/删测试后：更新此基线 + docs/h-field.md 基线表，并附一句原因与日期。
 do_env()      { need_elf || return 0
     step_bl "环境冒烟 x_env_smoke" 300 2 0 \
@@ -161,7 +164,12 @@ do_env()      { need_elf || return 0
     step_bl "机动跟踪 x_env_motion" 300 3 1 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_motion";
     step_bl "长跑稳定 x_env_longrun" 600 2 0 \
-        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_longrun"; }
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_env_longrun";
+    # ★§5.148 PHY 化家族（真动力学；PHY 冒烟 + env 家族迁移 ✓）
+    step_bl "PHY 悬停守门 x_phy_hover_smoke" 600 1 0 \
+        bash -c "cd $ROOT/mcu_simulater && PHY_INJECT_MAG=1 PHY_SMOKE_SECS=10 cargo test $RELEASE --test x_phy_hover_smoke";
+    step_bl "PHY 环境家族 x_phy_env_smoke" 1800 6 0 \
+        bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_phy_env_smoke"; }
 do_hover()    { need_elf || return 0
     step "虚拟外设直通闭环 x_vperiph_mcusim" 900 \
         bash -c "cd $ROOT/mcu_simulater && cargo test $RELEASE --test x_vperiph_mcusim";
